@@ -1,10 +1,14 @@
 /*
  * Bonsai store — plants and readings, held in localStorage.
  *
- * localStorage is per-browser and per-device: it does not sync between the
- * greenhouse phone and the office laptop. That is a deliberate trade (no
- * server, no account, no subscription), and the JSON export/import below is
- * how you move a nursery between devices or back it up. See the README.
+ * localStorage is per-browser and per-device, so on its own it does not reach
+ * the greenhouse phone from the office laptop. Two things close that gap, and
+ * both come through mergeSnapshot below: the JSON export/import here, and the
+ * optional cloud sync in js/sync.js.
+ *
+ * Merging is by record id with the newest edit winning, and deletes are kept
+ * as tombstones rather than dropped — otherwise a device holding an old copy
+ * would quietly resurrect everything you had deleted.
  */
 (function (global) {
   'use strict';
@@ -71,14 +75,21 @@
 
   /* ------------------------------------------------------------- plants */
 
+  // Deleted records are kept as tombstones rather than removed, so a sync from
+  // a device that still has them cannot resurrect them. Everything that reads
+  // the nursery filters them out.
+  function alive(record) {
+    return record && !record.deletedAt;
+  }
+
   function listPlants() {
-    return load().plants.slice().sort(function (a, b) {
+    return load().plants.filter(alive).sort(function (a, b) {
       return (a.name || '').localeCompare(b.name || '');
     });
   }
 
   function getPlant(id) {
-    return load().plants.filter(function (p) { return p.id === id; })[0] || null;
+    return load().plants.filter(function (p) { return p.id === id && alive(p); })[0] || null;
   }
 
   function addPlant(fields) {
@@ -92,7 +103,8 @@
       source: (fields.source || '').trim(),
       startedOn: fields.startedOn || today(),
       notes: (fields.notes || '').trim(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     data.plants.push(plant);
     persist();
@@ -105,14 +117,21 @@
     ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes'].forEach(function (key) {
       if (fields[key] != null) plant[key] = fields[key];
     });
+    plant.updatedAt = new Date().toISOString();
     persist();
     return plant;
   }
 
   function deletePlant(id) {
+    var stamp = new Date().toISOString();
     var data = load();
-    data.plants = data.plants.filter(function (p) { return p.id !== id; });
-    data.entries = data.entries.filter(function (e) { return e.plantId !== id; });
+    data.plants.forEach(function (p) {
+      if (p.id === id) { p.deletedAt = stamp; p.updatedAt = stamp; }
+    });
+    // Tombstone the readings too, or a sync would leave them orphaned.
+    data.entries.forEach(function (e) {
+      if (e.plantId === id) { e.deletedAt = stamp; e.updatedAt = stamp; }
+    });
     persist();
   }
 
@@ -120,7 +139,7 @@
 
   function entriesFor(plantId) {
     return load().entries
-      .filter(function (e) { return e.plantId === plantId; })
+      .filter(function (e) { return e.plantId === plantId && alive(e); })
       .sort(function (a, b) { return a.at.localeCompare(b.at); });
   }
 
@@ -161,7 +180,8 @@
       suckersRemoved: !!fields.suckersRemoved,
       graftChecked: !!fields.graftChecked,
       moved: fields.moved || '',
-      note: (fields.note || '').trim()
+      note: (fields.note || '').trim(),
+      updatedAt: new Date().toISOString()
     };
     data.entries.push(entry);
     persist();
@@ -169,8 +189,10 @@
   }
 
   function deleteEntry(entryId) {
-    var data = load();
-    data.entries = data.entries.filter(function (e) { return e.id !== entryId; });
+    var stamp = new Date().toISOString();
+    load().entries.forEach(function (e) {
+      if (e.id === entryId) { e.deletedAt = stamp; e.updatedAt = stamp; }
+    });
     persist();
   }
 
@@ -259,40 +281,66 @@
     return JSON.stringify(load(), null, 2);
   }
 
+  function stampOf(record) {
+    return record.updatedAt || record.createdAt || '';
+  }
+
   /**
-   * Merge a backup into the current nursery. Plants and readings are matched
-   * on id, so re-importing the same file twice does not duplicate anything,
-   * and importing a phone's export onto a laptop combines the two.
+   * Merge two record lists by id, the newest write winning. Tombstones take
+   * part in that comparison like any other version, so a delete propagates
+   * between devices instead of being undone by whichever one still holds the
+   * record.
    */
-  function importJson(text) {
-    var incoming = JSON.parse(text);
+  function mergeLists(mine, theirs) {
+    var byId = {};
+    var order = [];
+
+    function absorb(record) {
+      if (!record || !record.id) return;
+      var existing = byId[record.id];
+      if (!existing) {
+        byId[record.id] = record;
+        order.push(record.id);
+        return;
+      }
+      if (stampOf(record) > stampOf(existing)) byId[record.id] = record;
+    }
+
+    mine.forEach(absorb);
+    var added = 0;
+    theirs.forEach(function (record) {
+      if (record && record.id && !byId[record.id]) added++;
+      absorb(record);
+    });
+    return { list: order.map(function (id) { return byId[id]; }), added: added };
+  }
+
+  // The whole nursery, tombstones included — what sync sends and receives.
+  function snapshot() {
+    var data = load();
+    return { version: 1, plants: data.plants, entries: data.entries };
+  }
+
+  /**
+   * Fold an incoming nursery into this one, reporting how many records were
+   * new. Both the import screen and the sync loop go through here, so manual
+   * and automatic merges cannot drift apart in behaviour.
+   */
+  function mergeSnapshot(incoming) {
     if (!incoming || !Array.isArray(incoming.plants) || !Array.isArray(incoming.entries)) {
-      throw new Error('That file does not look like a nursery backup.');
+      throw new Error('That does not look like a nursery backup.');
     }
     var data = load();
-    var plantIds = {};
-    data.plants.forEach(function (p) { plantIds[p.id] = true; });
-    var entryIds = {};
-    data.entries.forEach(function (e) { entryIds[e.id] = true; });
-
-    var addedPlants = 0;
-    var addedEntries = 0;
-    incoming.plants.forEach(function (p) {
-      if (p && p.id && !plantIds[p.id]) {
-        data.plants.push(p);
-        plantIds[p.id] = true;
-        addedPlants++;
-      }
-    });
-    incoming.entries.forEach(function (e) {
-      if (e && e.id && !entryIds[e.id]) {
-        data.entries.push(e);
-        entryIds[e.id] = true;
-        addedEntries++;
-      }
-    });
+    var plants = mergeLists(data.plants, incoming.plants);
+    var entries = mergeLists(data.entries, incoming.entries);
+    data.plants = plants.list;
+    data.entries = entries.list;
     persist();
-    return { plants: addedPlants, entries: addedEntries };
+    return { plants: plants.added, entries: entries.added };
+  }
+
+  function importJson(text) {
+    return mergeSnapshot(JSON.parse(text));
   }
 
   function csvCell(value) {
@@ -354,6 +402,8 @@
     today: today,
     exportJson: exportJson,
     importJson: importJson,
+    snapshot: snapshot,
+    mergeSnapshot: mergeSnapshot,
     exportCsv: exportCsv,
     replaceAll: replaceAll,
     subscribe: subscribe

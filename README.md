@@ -3,7 +3,8 @@
 Track **pH, moisture, EC, growth, temperature, humidity, light, watering and
 fertiliser** per plant, with a **QR label** on each pot that opens that plant's
 metrics when scanned. One site carries both an indoor bonsai bench and
-full-size trees living outdoors.
+full-size trees living outdoors, and optionally syncs itself across devices for
+free.
 
 This repo contains a working tracker — a static web app with no accounts, no
 server and no subscription. It also answers the question that started it: *can
@@ -22,7 +23,7 @@ person need to see the same data on more than one device?**
 | **Microsoft Lists** (M365) | Yes — every list item has a stable URL | M365 licence | Yes, real sync | Best Microsoft-stack answer |
 | **Google Forms + Sheets** | Yes — a QR opens a pre-filled form | Free | Yes, real sync | Best free no-code answer |
 | **Microsoft Access** | No — desktop only | Owned | No | Not suited to phones |
-| **This repo** | Yes | Free | **No — see the limitation below** | Best if you want it tailored and offline |
+| **This repo** | Yes | Free | Yes, optional free sync | Best if you want it tailored and offline |
 
 A short but important detail: **use QR codes, not barcodes.** A 1D barcode
 (the supermarket kind) encodes a number and needs a dedicated scanner app plus
@@ -48,7 +49,9 @@ if a shared, always-synced record matters more than tailored charts, take it.
 
 Tailored per-plant dashboards, a printable label sheet, no accounts, and full
 offline operation — everything works from a phone in a greenhouse with no
-signal. The trade is stated plainly in **[Limitation](#limitation-data-is-per-device)**.
+signal. Cross-device sync is available and free but **optional**, and what it
+does and does not protect you from is spelled out in
+**[Sync](#sync-or-the-lack-of-it)**.
 
 ---
 
@@ -102,8 +105,8 @@ misread off a wet label from across the bench).
 - **what to watch** for that species, the full history, and the plant's own QR
   code.
 
-**Labels** prints the whole nursery as a QR label sheet. **Backup** exports and
-imports.
+**Labels** prints the whole nursery as a QR label sheet. **Sync** keeps devices
+in step automatically. **Backup** exports and imports by hand.
 
 ## What it tracks
 
@@ -165,29 +168,56 @@ through. This is flagged in the app too, at the top of the olive's watch list.
 
 ---
 
-## Limitation: data is per-device
+## Sync, or the lack of it
 
-**Readings are stored in the browser's local storage on the device that entered
-them.** They are not synced. A plant logged on the greenhouse phone will not
-appear on the office laptop, and clearing site data erases it.
+By default **readings are stored in this browser on this device** and are not
+synced anywhere. That is the cost of having no server and no accounts: fine for
+one person on one phone, wrong for a bench shared between a phone and a laptop.
 
-This is the direct cost of having no server and no accounts. It is fine for one
-person working from one phone, and wrong for a team sharing a bench.
+There are two ways out, and they are not exclusive.
 
-What to do about it:
+### Manual: JSON backup
 
-- **Export a JSON backup regularly** (Backup → Download JSON backup). Importing
-  merges by ID, so importing the same file twice changes nothing and importing
-  the phone's export onto the laptop combines both sets.
-- **Export CSV for Excel or Sheets** — one row per check, ready for a
-  PivotTable. This is the bridge to the Office side of the question.
-- **If you need real sync**, the honest fix is a shared backend. `js/store.js`
-  is the only file that touches storage, so swapping localStorage for
-  Supabase, Airtable or a SharePoint list is a contained change — the views and
-  charts do not care where the data comes from.
+Backup → **Download JSON backup**, then **Import** it on the other device.
+Imports merge by record id and by edit time, so importing the same file twice
+changes nothing, and two devices' readings combine rather than overwrite.
+**Download CSV for Excel** gives one row per check with every factor as a
+column.
+
+### Automatic: Cloud Firestore sync
+
+The **Sync** page connects the app to a free Firebase project so devices keep
+themselves in step. It is free on the Spark plan, needs no card, and — unlike
+some free tiers — does not pause when idle, so a nursery you do not open for a
+fortnight in winter still works.
+
+There is no Firebase SDK: sync speaks to the Firestore REST API with `fetch`,
+so the app stays a set of plain files with no build step and no CDN. Losing the
+network is not an error state — readings are saved locally and go up when you
+reconnect.
+
+Setup is about ten minutes and the steps are printed on the Sync page itself:
+create a project, create a Firestore database, enable **Anonymous**
+authentication, publish the rules shown on that page, then paste the Project ID
+and Web API Key in and generate a **nursery code**. Entering that same code on
+another device joins it to the same nursery.
+
+Three things worth knowing before you turn it on:
+
+- **The code is the key.** There are no usernames. Anyone holding the nursery
+  code can read and write the nursery, exactly like an unguessable share link.
+  A generated code is 24 characters from a 32-character alphabet — about 120
+  bits, so it will not be guessed — but treat it as a password, not a username.
+- **Edits merge, they do not overwrite.** Each plant and each check syncs
+  independently, newest edit winning. Deletes are kept as tombstones so they
+  propagate properly instead of reappearing from whichever device still had the
+  record.
+- **Sync is not backup.** It copies your data; it does not version it. Keep
+  exporting a JSON file occasionally — that is what saves you from a mistaken
+  bulk delete, which sync would faithfully replicate everywhere.
 
 Scanning a label for a plant this device has never seen shows a clear message
-pointing at the import page, rather than a confusing empty dashboard.
+pointing at the sync and import pages, rather than a confusing empty dashboard.
 
 ---
 
@@ -198,7 +228,8 @@ index.html          shell and routes
 css/styles.css      theme tokens, light and dark
 js/qrcode.js        self-contained QR encoder (no CDN)
 js/profiles.js      care profiles: tracked factors, target bands, watch lists
-js/store.js         plants, readings, import/export — the only storage code
+js/store.js         plants, readings, merge and tombstones — the only storage code
+js/sync.js          optional Firestore sync over REST (no SDK, no CDN)
 js/charts.js        SVG charts, hover and keyboard readout, table views
 js/app.js           routing and views
 test/               verification, described below
@@ -225,6 +256,7 @@ view, so no value is reachable by colour or hover alone.
 pip install segno zxing-cpp numpy playwright pillow
 python3 test/verify_qr.py     # the QR encoder
 python3 test/smoke_app.py     # the app, in a real browser
+python3 test/sync_test.py     # two devices converging through sync
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
@@ -249,5 +281,14 @@ the QR the sheet actually drew, decodes it, and follows the decoded URL to
 confirm it lands on the plant it names — proving the label loop end to end
 rather than just that a QR was drawn. It also round-trips the JSON export and
 checks that re-importing does not duplicate.
+
+`sync_test.py` runs the real `js/sync.js` against a mock of the two Firestore
+REST endpoints, served from the same origin as the app — so it needs no Firebase
+project, no credentials and no network, while still exercising the actual
+sign-in, read, merge and write-back. Two browser contexts stand in for two
+devices. It checks that a plant made on A reaches B, that a reading added on B
+reaches A without losing A's own, that a delete propagates and **stays** deleted
+when a stale device pushes an old snapshot back, and that losing the network
+leaves local data intact and recovers when it returns.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.

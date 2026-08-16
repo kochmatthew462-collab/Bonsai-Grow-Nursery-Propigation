@@ -1,9 +1,9 @@
 /*
  * Bonsai Nursery Tracker — routing and views.
  *
- * Four hash routes: the nursery list, a plant detail page, the printable label
- * sheet, and backup. A QR label encodes <base>#/p/<id>, so scanning it with any
- * phone camera opens that plant's page directly.
+ * Five hash routes: the nursery list, a plant detail page, the printable label
+ * sheet, sync settings, and backup. A QR label encodes <base>#/p/<id>, so
+ * scanning it with any phone camera opens that plant's page directly.
  *
  * Which factors a plant records, and the bands they are judged against, come
  * from its care profile (js/profiles.js) — that is what lets one site carry
@@ -15,6 +15,7 @@
   var store = global.BonsaiStore;
   var charts = global.BonsaiCharts;
   var profiles = global.BonsaiProfiles;
+  var sync = global.BonsaiSync;
   var QR = global.BonsaiQR;
 
   var METRICS = profiles.metrics;
@@ -914,6 +915,117 @@
     ]));
   }
 
+
+  /* ----------------------------------------------------------------- sync */
+
+  function renderSync(view) {
+    var cfg = sync.config();
+
+    view.appendChild(h('div', { class: 'page-head' }, [
+      h('h1', { text: 'Sync across devices' }),
+      h('p', {
+        class: 'hint',
+        text: 'Optional. With this on, the greenhouse phone and the office laptop keep ' +
+          'the same nursery automatically — no exporting a file each time. It is free, ' +
+          'and it still works offline: readings are saved on the device and go up when ' +
+          'you reconnect.'
+      })
+    ]));
+
+    var badge = h('p', { class: 'hint', text: sync.status().message });
+    sync.onStatus(function (state) { badge.textContent = state.message; });
+
+    var enabled = h('input', { type: 'checkbox', name: 'syncEnabled', checked: cfg.enabled });
+    var projectId = h('input', { type: 'text', name: 'projectId', value: cfg.projectId, placeholder: 'bonsai-nursery-1a2b3' });
+    var apiKey = h('input', { type: 'text', name: 'apiKey', value: cfg.apiKey, placeholder: 'AIza…' });
+    var code = h('input', { type: 'text', name: 'code', value: cfg.code, placeholder: 'paste the code from your other device' });
+
+    var saved = h('p', { class: 'hint' });
+
+    view.appendChild(h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [h('h2', { text: 'Connection' }), badge]),
+      h('div', { class: 'field-grid' }, [
+        field('Project ID', projectId, 'from the Firebase console'),
+        field('Web API key', apiKey, 'Project settings → General → Web API Key')
+      ]),
+      field('Nursery code', code,
+        'The same code on every device that should share this nursery. Treat it like a password — anyone who has it can read and write your readings.'),
+      h('div', { class: 'button-row' }, [
+        h('button', {
+          class: 'button', text: 'Generate a new code',
+          onclick: function () { code.value = sync.newCode(); }
+        }),
+        h('button', {
+          class: 'button', text: 'Copy code',
+          onclick: function () {
+            code.select();
+            try { document.execCommand('copy'); saved.textContent = 'Code copied.'; }
+            catch (error) { saved.textContent = 'Select the code and copy it manually.'; }
+          }
+        })
+      ]),
+      h('label', { class: 'checkbox' }, [enabled, document.createTextNode('Keep this device in sync')]),
+      h('div', { class: 'button-row' }, [
+        h('button', {
+          class: 'button button-primary', text: 'Save and sync now',
+          onclick: function () {
+            if (enabled.checked && !(projectId.value && apiKey.value && code.value)) {
+              saved.textContent = 'Fill in the project ID, API key and nursery code first.';
+              return;
+            }
+            sync.setConfig({
+              enabled: enabled.checked,
+              projectId: projectId.value.trim(),
+              apiKey: apiKey.value.trim(),
+              code: code.value.trim()
+            });
+            saved.textContent = 'Saved.';
+            sync.start();
+          }
+        }),
+        h('button', { class: 'button', text: 'Sync now', onclick: function () { sync.syncNow(); } })
+      ]),
+      saved
+    ]));
+
+    view.appendChild(h('div', { class: 'card' }, [
+      h('h2', { text: 'One-time setup (about ten minutes)' }),
+      h('ol', { class: 'steps' }, [
+        h('li', {}, [document.createTextNode('At '), h('strong', { text: 'console.firebase.google.com' }),
+          document.createTextNode(', create a project. No card is needed — the free Spark plan covers a nursery easily.')]),
+        h('li', {}, [h('strong', { text: 'Build → Firestore Database → Create database' }),
+          document.createTextNode('. Pick a region near you and start in production mode.')]),
+        h('li', {}, [h('strong', { text: 'Build → Authentication → Get started → Anonymous' }),
+          document.createTextNode(' and enable it. This does not create accounts; it just lets the rules below require a signed-in caller.')]),
+        h('li', {}, [document.createTextNode('In '), h('strong', { text: 'Firestore → Rules' }),
+          document.createTextNode(', paste the rules below and publish.')]),
+        h('li', {}, [h('strong', { text: 'Project settings → General' }),
+          document.createTextNode(', add a Web app if there is none, then copy the Project ID and Web API Key into the fields above.')]),
+        h('li', {}, [document.createTextNode('Press '), h('strong', { text: 'Generate a new code' }),
+          document.createTextNode(', save, then enter that same code on your other device.')])
+      ]),
+      h('pre', { class: 'code', text: "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /nurseries/{code} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}" })
+    ]));
+
+    view.appendChild(h('div', { class: 'card' }, [
+      h('h2', { text: 'What to expect' }),
+      h('div', { class: 'watch-list' }, [
+        h('div', { class: 'watch-item' }, [
+          h('div', { class: 'watch-title', text: 'Edits merge, they do not overwrite' }),
+          h('div', { class: 'watch-body', text: 'Each plant and each check syncs on its own, newest edit winning. Two devices adding different readings offline both keep theirs. Deletions carry across properly rather than reappearing from the other device.' })
+        ]),
+        h('div', { class: 'watch-item' }, [
+          h('div', { class: 'watch-title', text: 'The code is the key' }),
+          h('div', { class: 'watch-body', text: 'There are no usernames. Anyone holding the nursery code can read and write the nursery, exactly like an unguessable share link. A generated code is about 120 bits, so it will not be guessed — but do not post it anywhere public.' })
+        ]),
+        h('div', { class: 'watch-item' }, [
+          h('div', { class: 'watch-title', text: 'Keep exporting occasionally' }),
+          h('div', { class: 'watch-body', text: 'Sync copies your data; it does not version it. A JSON backup now and then is still the thing that saves you from a mistaken bulk delete.' })
+        ])
+      ])
+    ]));
+  }
+
   /* -------------------------------------------------------------- scanner */
 
   function setupScanner() {
@@ -991,6 +1103,9 @@
     } else if (hash.indexOf('#/labels') === 0) {
       renderLabels(view);
       current = 'labels';
+    } else if (hash.indexOf('#/sync') === 0) {
+      renderSync(view);
+      current = 'sync';
     } else if (hash.indexOf('#/backup') === 0) {
       renderBackup(view);
       current = 'backup';
@@ -1007,9 +1122,29 @@
   }
 
   global.addEventListener('hashchange', render);
+  // The header badge is the only always-visible sync signal, so it reports
+  // every state including "off" being deliberate.
+  function setupSyncBadge() {
+    var badge = document.getElementById('sync-status');
+    if (!badge) return;
+    function paint(state) {
+      if (state.level === 'off') {
+        badge.hidden = true;
+        return;
+      }
+      badge.hidden = false;
+      badge.setAttribute('data-level', state.level);
+      badge.textContent = state.message;
+    }
+    sync.onStatus(paint);
+    paint(sync.status());
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     setupScanner();
+    setupSyncBadge();
     render();
+    sync.start();
   });
 
   global.BonsaiApp = { render: render, plantUrl: plantUrl };
