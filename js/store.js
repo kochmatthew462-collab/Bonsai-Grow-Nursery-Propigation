@@ -23,7 +23,7 @@
   var cache = null;
 
   function blank() {
-    return { version: 1, plants: [], entries: [] };
+    return { version: 1, plants: [], entries: [], completions: [] };
   }
 
   function load() {
@@ -36,6 +36,7 @@
     }
     if (!Array.isArray(cache.plants)) cache.plants = [];
     if (!Array.isArray(cache.entries)) cache.entries = [];
+    if (!Array.isArray(cache.completions)) cache.completions = [];
     return cache;
   }
 
@@ -114,7 +115,7 @@
   function updatePlant(id, fields) {
     var plant = getPlant(id);
     if (!plant) return null;
-    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes'].forEach(function (key) {
+    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes', 'mlPerMin'].forEach(function (key) {
       if (fields[key] != null) plant[key] = fields[key];
     });
     plant.updatedAt = new Date().toISOString();
@@ -153,8 +154,11 @@
 
   function addEntry(plantId, fields) {
     var data = load();
+    // A caller may supply a deterministic id — the drip backfill does, so that
+    // regenerating it is idempotent and two devices produce identical records.
+    if (fields.id && data.entries.some(function (e) { return e.id === fields.id; })) return null;
     var entry = {
-      id: newId(10),
+      id: fields.id || newId(10),
       plantId: plantId,
       at: fields.at ? new Date(fields.at).toISOString() : new Date().toISOString(),
       ph: numberOrNull(fields.ph),
@@ -181,6 +185,7 @@
       suckersRemoved: !!fields.suckersRemoved,
       graftChecked: !!fields.graftChecked,
       moved: fields.moved || '',
+      auto: fields.auto || '',
       note: (fields.note || '').trim(),
       updatedAt: new Date().toISOString()
     };
@@ -316,10 +321,49 @@
     return { list: order.map(function (id) { return byId[id]; }), added: added };
   }
 
+  /* ------------------------------------------------- calendar completions */
+
+  function completionId(plantId, taskId, year) {
+    return plantId + ':' + taskId + ':' + year;
+  }
+
+  function isTaskDone(plantId, taskId, year) {
+    var id = completionId(plantId, taskId, year);
+    var found = load().completions.filter(function (c) { return c.id === id && alive(c); })[0];
+    return found ? found.doneAt : null;
+  }
+
+  function setTaskDone(plantId, taskId, year, done) {
+    var data = load();
+    var id = completionId(plantId, taskId, year);
+    var stamp = new Date().toISOString();
+    var existing = data.completions.filter(function (c) { return c.id === id; })[0];
+    if (done) {
+      if (existing) {
+        delete existing.deletedAt;
+        existing.doneAt = stamp;
+        existing.updatedAt = stamp;
+      } else {
+        data.completions.push({
+          id: id, plantId: plantId, taskId: taskId, year: year,
+          doneAt: stamp, updatedAt: stamp
+        });
+      }
+    } else if (existing) {
+      // Tombstoned rather than dropped, so un-ticking syncs like anything else.
+      existing.deletedAt = stamp;
+      existing.updatedAt = stamp;
+    }
+    persist();
+  }
+
   // The whole nursery, tombstones included — what sync sends and receives.
   function snapshot() {
     var data = load();
-    return { version: 1, plants: data.plants, entries: data.entries };
+    return {
+      version: 1, plants: data.plants, entries: data.entries,
+      completions: data.completions
+    };
   }
 
   /**
@@ -334,8 +378,10 @@
     var data = load();
     var plants = mergeLists(data.plants, incoming.plants);
     var entries = mergeLists(data.entries, incoming.entries);
+    var completions = mergeLists(data.completions || [], incoming.completions || []);
     data.plants = plants.list;
     data.entries = entries.list;
+    data.completions = completions.list;
     persist();
     return { plants: plants.added, entries: entries.added };
   }
@@ -358,7 +404,7 @@
       'humidity_pct', 'light_lux', 'chill_hours', 'vigor',
       'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount',
       'repotted', 'pruned', 'pest_seen', 'pest_type', 'suckers_removed',
-      'graft_checked', 'moved', 'note'];
+      'graft_checked', 'moved', 'auto', 'note'];
     var yn = function (v) { return v ? 'yes' : 'no'; };
     var lines = [header.join(',')];
     data.entries.slice().sort(function (a, b) { return a.at.localeCompare(b.at); })
@@ -370,14 +416,19 @@
           e.humidity, e.light, e.chill, e.vigor,
           yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount,
           yn(e.repotted), yn(e.pruned), yn(e.pestSeen), e.pestType, yn(e.suckersRemoved),
-          yn(e.graftChecked), e.moved, e.note
+          yn(e.graftChecked), e.moved, e.auto, e.note
         ].map(csvCell).join(','));
       });
     return lines.join('\n');
   }
 
+  // Normalise on the way in: callers (and older backups) may omit newer
+  // collections entirely, and load()'s guards are skipped once cache is set.
   function replaceAll(next) {
-    cache = next;
+    cache = next || blank();
+    if (!Array.isArray(cache.plants)) cache.plants = [];
+    if (!Array.isArray(cache.entries)) cache.entries = [];
+    if (!Array.isArray(cache.completions)) cache.completions = [];
     persist();
   }
 
@@ -405,6 +456,8 @@
     importJson: importJson,
     snapshot: snapshot,
     mergeSnapshot: mergeSnapshot,
+    isTaskDone: isTaskDone,
+    setTaskDone: setTaskDone,
     exportCsv: exportCsv,
     replaceAll: replaceAll,
     subscribe: subscribe

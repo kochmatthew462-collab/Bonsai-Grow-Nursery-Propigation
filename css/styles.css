@@ -572,6 +572,51 @@ ol.steps { margin: 0; padding-left: 20px; font-size: 0.88rem; color: var(--text-
 ol.steps li { margin-bottom: 6px; }
 ol.steps strong { color: var(--text-primary); }
 
+/* ------------------------------------------------------------- calendar */
+
+.task-list { display: grid; gap: 10px; }
+
+.task-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--wash);
+  border-left: 3px solid var(--axis);
+}
+.task-row[data-state="overdue"] { border-left-color: var(--status-critical); }
+.task-row[data-state="due"]     { border-left-color: var(--status-warn); }
+.task-row[data-state="done"]    { opacity: 0.6; }
+
+.task-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  justify-content: space-between;
+}
+.task-title { font-weight: 600; font-size: 0.92rem; }
+.task-meta { font-size: 0.78rem; color: var(--text-secondary); }
+.task-body { font-size: 0.85rem; color: var(--text-secondary); }
+
+.cat-chip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.drip-facts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
 /* ---------------------------------------------------------------- print */
 
 @media print {

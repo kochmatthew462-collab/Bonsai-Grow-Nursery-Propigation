@@ -16,6 +16,7 @@
   var charts = global.BonsaiCharts;
   var profiles = global.BonsaiProfiles;
   var sync = global.BonsaiSync;
+  var calendar = global.BonsaiCalendar;
   var QR = global.BonsaiQR;
 
   var METRICS = profiles.metrics;
@@ -280,9 +281,13 @@
     ]));
 
     view.appendChild(profileCard(plant, profile));
-    var calendar = calendarCard(profile);
-    if (calendar) view.appendChild(calendar);
+    var monthCard = calendarCard(profile);
+    if (monthCard) view.appendChild(monthCard);
+    var tasks = plantTasksCard(plant, profile);
+    if (tasks) view.appendChild(tasks);
     view.appendChild(kpiRow(plant, profile, latest));
+    var drip = dripCard(plant, profile);
+    if (drip) view.appendChild(drip);
     view.appendChild(logForm(plant, profile));
 
     /* --- trend charts, one per tracked metric */
@@ -1060,6 +1065,167 @@
     ]));
   }
 
+  /* ------------------------------------------------------------- calendar */
+
+  function taskRow(item, onChange) {
+    var button = h('button', {
+      class: 'button button-quiet',
+      text: item.state === 'done' ? 'Undo' : 'Mark done',
+      onclick: function () {
+        store.setTaskDone(item.plantId, item.task.id, item.year, item.state !== 'done');
+        onChange();
+      }
+    });
+    return h('div', { class: 'task-row', 'data-state': item.state }, [
+      h('div', { class: 'task-head' }, [
+        h('span', { class: 'task-title', text: item.task.title }),
+        h('span', { class: 'cat-chip', text: item.categoryLabel })
+      ]),
+      h('div', { class: 'task-meta' }, [
+        h('a', { href: '#/p/' + item.plantId, text: item.plantName }),
+        document.createTextNode(' · ' + item.when +
+          (item.state === 'upcoming' && item.daysAway > 0 ? ' · in ' + item.daysAway + ' days' : '') +
+          (item.state === 'overdue' ? ' · window has passed' : ''))
+      ]),
+      h('div', { class: 'task-body', text: item.task.body }),
+      h('div', { class: 'button-row no-print' }, [button])
+    ]);
+  }
+
+  function allTasks() {
+    var today = new Date();
+    var out = [];
+    store.listPlants().forEach(function (plant) {
+      var profile = profiles.get(plant.profileId);
+      out = out.concat(calendar.tasksForPlant(plant, profile, today, store.isTaskDone));
+    });
+    return calendar.sortTasks(out);
+  }
+
+  function renderCalendar(view) {
+    var items = allTasks();
+
+    view.appendChild(h('div', { class: 'page-head' }, [
+      h('h1', { text: 'Master calendar' }),
+      h('p', {
+        class: 'hint',
+        text: 'Every dated window across the whole nursery, taken from each tree’s handbook — ' +
+          'pruning, repotting, feeding cutoffs, indoor and outdoor moves, scouting and system ' +
+          'changeovers. Marking one done is remembered for that year only, so it comes back next season.'
+      })
+    ]));
+
+    if (!items.length) {
+      view.appendChild(h('div', { class: 'card' }, [
+        h('p', { class: 'hint', text: 'Nothing scheduled — add a plant and give it a care profile.' })
+      ]));
+      return;
+    }
+
+    var groups = [
+      { key: 'overdue', title: 'Missed', note: 'The window has passed. Handbook windows exist for a reason — if you skipped one deliberately, mark it done to clear it.' },
+      { key: 'due', title: 'Due now', note: 'You are inside the window for these.' },
+      { key: 'upcoming', title: 'Coming up', note: 'Next windows, soonest first.' },
+      { key: 'done', title: 'Done this year', note: '' }
+    ];
+
+    groups.forEach(function (group) {
+      var rows = items.filter(function (item) { return item.state === group.key; });
+      if (!rows.length) return;
+      var card = h('div', { class: 'card' }, [
+        h('div', { class: 'card-head' }, [
+          h('h2', { text: group.title }),
+          h('span', { class: 'hint', text: rows.length + (rows.length === 1 ? ' item' : ' items') })
+        ]),
+        group.note ? h('p', { class: 'hint', text: group.note }) : null
+      ]);
+      var list = h('div', { class: 'task-list' });
+      rows.forEach(function (item) { list.appendChild(taskRow(item, render)); });
+      card.appendChild(list);
+      view.appendChild(card);
+    });
+  }
+
+  // Only what needs attention, on the plant's own page.
+  function plantTasksCard(plant, profile) {
+    var items = calendar.tasksForPlant(plant, profile, new Date(), store.isTaskDone);
+    var active = calendar.sortTasks(items).filter(function (item) {
+      return item.state === 'overdue' || item.state === 'due' ||
+        (item.state === 'upcoming' && item.daysAway <= 30);
+    });
+    if (!active.length) return null;
+    var list = h('div', { class: 'task-list' });
+    active.forEach(function (item) { list.appendChild(taskRow(item, render)); });
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'Due now and next 30 days' }),
+        h('a', { class: 'hint', href: '#/calendar', text: 'whole calendar' })
+      ]),
+      list
+    ]);
+  }
+
+  /* ------------------------------------------------------------------ drip */
+
+  function dripCard(plant, profile) {
+    var summary = calendar.dripSummary(profile, plant, new Date());
+    if (!summary) return null;
+
+    var flow = h('input', {
+      type: 'number', name: 'mlPerMin', step: '0.1', min: '0',
+      value: plant.mlPerMin == null ? '' : plant.mlPerMin,
+      placeholder: String(summary.mlPerMin)
+    });
+
+    function fact(key, value) {
+      return h('div', { class: 'month-fact' }, [
+        h('span', { class: 'k', text: key }),
+        h('span', { class: 'v', text: value })
+      ]);
+    }
+
+    var facts = summary.clamped
+      ? [fact('Season', summary.season), fact('Status', 'Clamped'), fact('Hand-water', 'every 7–10 d')]
+      : [
+          fact('Season', summary.season),
+          fact('Runs', summary.days),
+          fact('Per run', summary.perRun + ' ml'),
+          fact('Per week', summary.perWeek + ' ml'),
+          fact('Emitters', String(summary.emitters))
+        ];
+
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'Drip system' }),
+        statusChip(summary.calibrated
+          ? { level: 'good', label: 'calibrated flow' }
+          : { level: 'warn', label: 'nominal flow — not yet calibrated' })
+      ]),
+      h('p', {
+        class: 'hint',
+        text: summary.clamped
+          ? 'The winter bypass is on for this tree, so nothing is logged automatically. Hand-water every 7–10 days and tick Watered when you do.'
+          : 'Watering entries are created automatically for every scheduled run, so you never log bench water by hand. ' +
+            'They are DERIVED from the schedule — emitters x flow x runtime — not measured at the pump, so a clogged emitter ' +
+            'still reads as watered. The daily 30-second glance is what catches that.'
+      }),
+      h('div', { class: 'drip-facts' }, facts),
+      h('div', { class: 'field-grid no-print' }, [
+        field('Calibrated flow (ml per minute per emitter)', flow,
+          'From the catch-cup pass: lift the staked lines into cups, manual-run exactly 2 minutes, then mL ÷ 2. Blank uses the kit’s nominal ' + summary.mlPerMin + '.')
+      ]),
+      h('div', { class: 'button-row no-print' }, [
+        h('button', {
+          class: 'button', text: 'Save calibration',
+          onclick: function () {
+            store.updatePlant(plant.id, { mlPerMin: flow.value === '' ? null : Number(flow.value) });
+            render();
+          }
+        })
+      ])
+    ]);
+  }
+
   /* -------------------------------------------------------------- scanner */
 
   function setupScanner() {
@@ -1124,9 +1290,21 @@
 
   /* --------------------------------------------------------------- router */
 
+  // The site is static, so there is nothing running overnight to write the
+  // drip log. Instead it is caught up whenever the app is opened — ids are
+  // deterministic, so this is idempotent and safe to run on every render.
+  function catchUpDrip() {
+    var made = 0;
+    store.listPlants().forEach(function (plant) {
+      made += calendar.backfillDrip(store, profiles.get(plant.profileId), plant, new Date());
+    });
+    return made;
+  }
+
   function render() {
     var view = document.getElementById('view');
     view.textContent = '';
+    catchUpDrip();
 
     var hash = global.location.hash || '#/';
     var plantMatch = hash.match(/^#\/p\/([^/?]+)/);
@@ -1137,6 +1315,9 @@
     } else if (hash.indexOf('#/labels') === 0) {
       renderLabels(view);
       current = 'labels';
+    } else if (hash.indexOf('#/calendar') === 0) {
+      renderCalendar(view);
+      current = 'calendar';
     } else if (hash.indexOf('#/sync') === 0) {
       renderSync(view);
       current = 'sync';
