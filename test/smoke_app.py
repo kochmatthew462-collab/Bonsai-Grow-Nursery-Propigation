@@ -1,10 +1,12 @@
 """End-to-end check of the tracker in a real browser.
 
-Drives the app the way the nursery would: add plants, log checks, open the
-label sheet, then take the QR code the sheet actually rendered, decode it with
-zxing-cpp, and follow the decoded URL to confirm it lands on the right plant.
-That last step is the one that matters -- it proves a printed label routes to
-the plant it names, rather than merely that a QR code was drawn.
+Drives the app the way the nursery would: add plants on three different care
+profiles (indoor bonsai bench, container bergamot, container olive), log checks
+carrying the full set of factors, then take the QR code the label sheet actually
+rendered, decode it with zxing-cpp, and follow the decoded URL to confirm it
+lands on the right plant. That last step is the one that matters -- it proves a
+printed label routes to the plant it names, rather than merely that a QR code
+was drawn.
 
 Usage:
     pip install playwright zxing-cpp numpy pillow
@@ -12,6 +14,7 @@ Usage:
 """
 
 import argparse
+import base64
 import contextlib
 import functools
 import http.server
@@ -58,37 +61,36 @@ def serve(directory: pathlib.Path):
             httpd.shutdown()
 
 
-def add_plant(page, name, species, stage):
+def add_plant(page, name, species, profile_id, stage="stem graft"):
     page.goto_hash("#/")
-    page.fill("form.card input[type=text] >> nth=0", name)
-    page.fill("form.card input[type=text] >> nth=1", species)
-    page.select_option("form.card select", stage)
-    page.click("button:has-text('Add plant')")
+    form = page.locator("form.card:has(h2:text('Add a plant'))")
+    form.locator("[name=name]").fill(name)
+    form.locator("[name=species]").fill(species)
+    form.locator("[name=profileId]").select_option(profile_id)
+    form.locator("[name=stage]").select_option(stage)
+    form.locator("button[type=submit]").click()
     page.wait_for_selector("h2:has-text('Log a check')")
     return page.url.split("#/p/")[1]
 
 
-def log_check(page, plant_id, *, date, ph=None, moisture=None, growth=None,
-              watered=False, water_ml=None, fertilised=False, fertiliser=""):
+def log_check(page, plant_id, **values):
+    """Fill whichever named fields exist on this plant's profile-driven form."""
     page.goto_hash(f"#/p/{plant_id}")
     page.wait_for_selector("h2:has-text('Log a check')")
     form = page.locator("form.card:has(h2:text('Log a check'))")
-    form.locator("input[type=date]").fill(date)
-    if ph is not None:
-        form.locator("input[type=number]").nth(0).fill(str(ph))
-    if moisture is not None:
-        form.locator("input[type=number]").nth(1).fill(str(moisture))
-    if growth is not None:
-        form.locator("input[type=number]").nth(2).fill(str(growth))
-    if watered:
-        form.locator("input[type=checkbox]").nth(0).check()
-        if water_ml is not None:
-            form.locator("input[type=number]").nth(3).fill(str(water_ml))
-    if fertilised:
-        form.locator("input[type=checkbox]").nth(1).check()
-        form.locator("input[type=text]").nth(0).fill(fertiliser)
+    for key, value in values.items():
+        control = form.locator(f"[name={key}]")
+        if control.count() == 0:
+            raise AssertionError(f"field {key!r} not on the form for {plant_id}")
+        if isinstance(value, bool):
+            if value:
+                control.check()
+        elif control.evaluate("el => el.tagName") == "SELECT":
+            control.select_option(value)
+        else:
+            control.fill(str(value))
     form.locator("button[type=submit]").click()
-    page.wait_for_timeout(120)
+    page.wait_for_timeout(110)
 
 
 def decode_svg(page, selector: str) -> str:
@@ -115,7 +117,6 @@ def decode_svg(page, selector: str) -> str:
         })""",
         selector,
     )
-    import base64
     image = Image.open(io.BytesIO(base64.b64decode(png_b64))).convert("L")
     result = zxingcpp.read_barcode(np.array(image))
     return result.text if result else ""
@@ -143,90 +144,140 @@ def main() -> int:
 
         def goto_hash(h):
             page.goto(base_url + h)
-            page.wait_for_timeout(120)
+            page.wait_for_timeout(110)
 
         page.goto_hash = goto_hash
 
         goto_hash("#/")
         check("app boots", page.locator("h1:has-text('Nursery')").count() == 1)
 
-        juniper = add_plant(page, "Shohin juniper #4", "Juniperus procumbens 'Nana'", "cutting")
-        maple = add_plant(page, "Trident maple A2", "Acer buergerianum", "air layer")
-        check("two plants added", juniper != maple and len(juniper) == 6)
+        juniper = add_plant(page, "Shohin juniper #4", "Juniperus procumbens 'Nana'",
+                            "bench-median", "cutting")
+        bergamot = add_plant(page, "Bergamot #1", "Citrus bergamia", "bergamot")
+        olive = add_plant(page, "Arbequina #1", "Olea europaea 'Arbequina'", "arbequina-olive")
+        check("three plants on three profiles", len({juniper, bergamot, olive}) == 3)
 
-        readings = [
-            ("2026-05-02", 6.8, 7.0, 24, True, 250, True, "Biogold"),
-            ("2026-05-16", 6.6, 5.5, 29, True, 240, False, ""),
-            ("2026-06-01", 6.4, 4.0, 35, True, 260, True, "Biogold"),
-            ("2026-06-18", 6.3, 6.5, 41, True, 250, False, ""),
-            ("2026-07-04", 6.1, 3.5, 48, True, 300, True, "fish emulsion"),
-            ("2026-07-22", 6.2, 5.0, 55, True, 280, False, ""),
+        # --- bench tree: the packet's factors, ending in band
+        bench_readings = [
+            ("2026-05-03", 6.6, 55, 1.0, 24, 64, 75, 55, 9200),
+            ("2026-05-17", 6.4, 48, 1.1, 29, 65, 76, 57, 9400),
+            ("2026-06-07", 6.3, 52, 1.2, 35, 66, 77, 54, 9100),
+            ("2026-06-28", 6.3, 45, 1.1, 41, 65, 76, 56, 9300),
         ]
-        for date, ph, moisture, growth, watered, ml, fert, name in readings:
-            log_check(page, juniper, date=date, ph=ph, moisture=moisture, growth=growth,
-                      watered=watered, water_ml=ml, fertilised=fert, fertiliser=name)
-        log_check(page, maple, date="2026-06-10", ph=6.9, moisture=6.0, growth=12, watered=True, water_ml=180)
-        log_check(page, maple, date="2026-07-10", ph=6.7, moisture=4.5, growth=19, watered=True, water_ml=200)
+        for date, ph, moisture, ec, growth, low, high, rh, lux in bench_readings:
+            log_check(page, juniper, at=date, ph=ph, moisture=moisture, ec=ec, growth=growth,
+                      tempLow=low, tempHigh=high, humidity=rh, light=lux,
+                      watered=True, waterMl=250, fertilised=True, fertiliser="Biogold")
 
         goto_hash(f"#/p/{juniper}")
         page.wait_for_selector(".chart-svg")
-        check("trend charts render", page.locator(".chart-svg").count() >= 4,
-              f"found {page.locator('.chart-svg').count()}")
-        check("stat tiles render", page.locator(".stat-tile").count() == 5)
-        check("history rows", page.locator("table tbody tr").count() > 0)
-
-        # Hover the pH chart and confirm the tooltip appears with a value.
-        chart = page.locator(".chart-holder").first
-        box = chart.bounding_box()
-        page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
-        page.wait_for_timeout(150)
-        check("hover tooltip", page.locator(".chart-tooltip:not([hidden])").count() >= 1)
+        check("bench profile tracks eight factors",
+              page.locator(".chart-grid-cards > .card").count() == 7,
+              f"{page.locator('.chart-grid-cards > .card').count()} chart cards")
+        check("temperature drawn as one range chart",
+              page.locator(".card:has(h2:text('Air temperature')) .legend-item").count() == 2)
+        check("target bands shaded", page.locator("rect.chart-band").count() >= 4,
+              f"{page.locator('rect.chart-band').count()} bands")
+        check("in-band status shown", page.locator(".stat-tile .chip-good").count() >= 3,
+              f"{page.locator('.stat-tile .chip-good').count()} good chips")
+        check("season program shown", page.locator("h2:has-text('Season program')").count() == 1)
 
         if args.screenshots:
-            page.screenshot(path=str(args.screenshots / "plant-detail.png"), full_page=True)
+            page.screenshot(path=str(args.screenshots / "bench-plant.png"), full_page=True)
+
+        # --- bergamot: an out-of-band pH must be called out, not just plotted
+        log_check(page, bergamot, at="2026-06-05", ph=7.8, moisture=45, ec=1.4, growth=140,
+                  tempLow=58, tempHigh=88, humidity=55, watered=True,
+                  graftChecked=True, suckersRemoved=True, note="Two suckers below the graft.")
+        log_check(page, bergamot, at="2026-06-20", ph=7.6, moisture=40, ec=1.5, growth=147,
+                  tempLow=61, tempHigh=91, humidity=52, watered=True,
+                  pestSeen=True, pestType="citrus leaf miner")
+        goto_hash(f"#/p/{bergamot}")
+        page.wait_for_selector(".chart-svg")
+        check("out-of-band pH flagged", page.locator(".stat-tile .chip-bad, .stat-tile .chip-warn").count() >= 1,
+              "no warn/bad chip on a pH of 7.6 against a 6.0-7.0 band")
+        check("graft and sucker work logged",
+              page.locator("td:has-text('Rootstock suckers removed')").count() == 1)
+        check("pest sighting logged", page.locator("td:has-text('Pest seen')").count() == 1)
+        check("bergamot watch list present",
+              page.locator(".watch-item").count() >= 6,
+              f"{page.locator('.watch-item').count()} watch items")
+        check("bergamot has a move field",
+              page.locator("form.card:has(h2:text('Log a check')) [name=moved]").count() == 1)
+        if args.screenshots:
+            page.screenshot(path=str(args.screenshots / "bergamot.png"), full_page=True)
+
+        # --- olive: chill hours tracked, humidity and light are not
+        log_check(page, olive, at="2026-01-15", ph=7.2, moisture=30, growth=95,
+                  tempLow=18, tempHigh=44, chill=240)
+        goto_hash(f"#/p/{olive}")
+        page.wait_for_selector(".chart-svg")
+        olive_form = page.locator("form.card:has(h2:text('Log a check'))")
+        check("olive tracks chill hours", olive_form.locator("[name=chill]").count() == 1)
+        check("olive does not track humidity or light",
+              olive_form.locator("[name=humidity]").count() == 0
+              and olive_form.locator("[name=light]").count() == 0)
+        check("olive winter warning surfaced",
+              page.locator('.watch-item[data-severity="high"]').count() >= 3,
+              f"{page.locator('.watch-item[data-severity=high]').count()} high-severity items")
+        if args.screenshots:
+            page.screenshot(path=str(args.screenshots / "olive.png"), full_page=True)
+
+        # --- hover readout still works (hover() scrolls the chart into view;
+        # a raw mouse.move would miss it, since these cards sit far down the page)
+        goto_hash(f"#/p/{juniper}")
+        page.wait_for_selector(".chart-svg")
+        page.locator(".chart-holder svg").first.hover()
+        page.wait_for_timeout(200)
+        tooltip = page.locator(".chart-tooltip:not([hidden])")
+        check("hover tooltip", tooltip.count() >= 1)
+        check("tooltip carries a value and a date",
+              tooltip.count() >= 1 and any(c.isdigit() for c in tooltip.first.inner_text()),
+              tooltip.first.inner_text() if tooltip.count() else "no tooltip")
 
         # --- the label loop
         goto_hash("#/labels")
         page.wait_for_selector(".label-cell svg")
-        check("a label per plant", page.locator(".label-cell").count() == 2)
+        check("a label per plant", page.locator(".label-cell").count() == 3)
 
         decoded = decode_svg(page, ".label-cell:first-child svg")
-        expected_ids = {juniper, maple}
         decoded_id = decoded.rsplit("#/p/", 1)[-1] if "#/p/" in decoded else ""
-        check("label QR decodes", decoded.startswith("http") and decoded_id in expected_ids,
+        names = {juniper: "Shohin juniper #4", bergamot: "Bergamot #1", olive: "Arbequina #1"}
+        check("label QR decodes", decoded.startswith("http") and decoded_id in names,
               f"decoded {decoded!r}")
 
-        if args.screenshots:
-            page.screenshot(path=str(args.screenshots / "label-sheet.png"), full_page=True)
-
-        # Follow the decoded URL exactly as a phone camera would.
         page.goto(decoded)
         page.wait_for_timeout(200)
         heading = page.locator("h1").first.inner_text()
-        expected_name = "Shohin juniper #4" if decoded_id == juniper else "Trident maple A2"
-        check("scanned label opens its plant", heading == expected_name,
-              f"landed on {heading!r}, expected {expected_name!r}")
+        check("scanned label opens its plant", heading == names.get(decoded_id),
+              f"landed on {heading!r}, expected {names.get(decoded_id)!r}")
 
         # --- export round-trip
         goto_hash("#/backup")
         csv = page.evaluate("window.BonsaiStore.exportCsv()")
-        check("CSV has a row per check", len(csv.strip().splitlines()) == len(readings) + 2 + 1,
+        header = csv.splitlines()[0].split(",")
+        total_checks = len(bench_readings) + 2 + 1
+        check("CSV has a row per check", len(csv.strip().splitlines()) == total_checks + 1,
               f"{len(csv.strip().splitlines())} lines")
+        for column in ("ec_ms_cm", "temp_low_f", "humidity_pct", "chill_hours", "suckers_removed", "profile"):
+            check(f"CSV carries {column}", column in header)
+
         backup = page.evaluate("window.BonsaiStore.exportJson()")
         page.evaluate("window.BonsaiStore.replaceAll({version:1,plants:[],entries:[]})")
         added = page.evaluate("(text) => window.BonsaiStore.importJson(text)", backup)
-        check("import restores everything", added["plants"] == 2 and added["entries"] == len(readings) + 2,
-              str(added))
+        check("import restores everything",
+              added["plants"] == 3 and added["entries"] == total_checks, str(added))
         again = page.evaluate("(text) => window.BonsaiStore.importJson(text)", backup)
         check("re-import does not duplicate", again["plants"] == 0 and again["entries"] == 0, str(again))
 
         goto_hash("#/")
+        check("nursery list shows status", page.locator("tbody .chip").count() >= 2)
         if args.screenshots:
             page.screenshot(path=str(args.screenshots / "nursery-list.png"), full_page=True)
             page.emulate_media(color_scheme="dark")
             goto_hash(f"#/p/{juniper}")
             page.wait_for_selector(".chart-svg")
-            page.screenshot(path=str(args.screenshots / "plant-detail-dark.png"), full_page=True)
+            page.screenshot(path=str(args.screenshots / "bench-plant-dark.png"), full_page=True)
             page.emulate_media(color_scheme="light")
 
         check("no console or page errors", not errors, "; ".join(errors[:3]))

@@ -1,7 +1,10 @@
 # Bonsai Grow / Nursery / Propagation Tracker
 
-Track **pH, moisture, growth, watering and fertiliser** per plant, with a
-**QR label** on each pot that opens that plant's metrics when scanned.
+Track **pH, moisture, EC, growth, temperature, humidity, light, watering and
+fertiliser** per plant, with a **QR label** on each pot that opens that plant's
+metrics when scanned. One site carries both an indoor bonsai bench and
+full-size trees living outdoors, and optionally syncs itself across devices for
+free.
 
 This repo contains a working tracker — a static web app with no accounts, no
 server and no subscription. It also answers the question that started it: *can
@@ -20,7 +23,7 @@ person need to see the same data on more than one device?**
 | **Microsoft Lists** (M365) | Yes — every list item has a stable URL | M365 licence | Yes, real sync | Best Microsoft-stack answer |
 | **Google Forms + Sheets** | Yes — a QR opens a pre-filled form | Free | Yes, real sync | Best free no-code answer |
 | **Microsoft Access** | No — desktop only | Owned | No | Not suited to phones |
-| **This repo** | Yes | Free | **No — see the limitation below** | Best if you want it tailored and offline |
+| **This repo** | Yes | Free | Yes, optional free sync | Best if you want it tailored and offline |
 
 A short but important detail: **use QR codes, not barcodes.** A 1D barcode
 (the supermarket kind) encodes a number and needs a dedicated scanner app plus
@@ -46,7 +49,9 @@ if a shared, always-synced record matters more than tailored charts, take it.
 
 Tailored per-plant dashboards, a printable label sheet, no accounts, and full
 offline operation — everything works from a phone in a greenhouse with no
-signal. The trade is stated plainly in **[Limitation](#limitation-data-is-per-device)**.
+signal. Cross-device sync is available and free but **optional**, and what it
+does and does not protect you from is spelled out in
+**[Sync](#sync-or-the-lack-of-it)**.
 
 ---
 
@@ -71,8 +76,9 @@ live somewhere real. GitHub Pages is free and enough:
 1. Repo **Settings → Pages**.
 2. **Source:** deploy from a branch, pick your branch and `/ (root)`.
 3. Wait for the green tick, then open the published URL.
-4. Go to **Labels**, confirm the **Base URL** matches the published address,
-   press **Apply**, then **Print**.
+4. Go to **Labels** and press **Print**. The Base URL fills itself in from the
+   address you are on, so it only needs changing if you print from one device
+   and scan against another.
 
 Print onto weatherproof or laminated stock — labels live outdoors, and a QR
 code that has bleached or delaminated will not scan.
@@ -87,58 +93,131 @@ misread off a wet label from across the bench).
 
 **A plant's page** has:
 
-- five headline tiles — latest pH, moisture, growth, days since watering, days
-  since feeding;
-- **Log a check** — fill in only what you actually measured; a blank field
-  records nothing rather than a zero;
-- trend charts for pH, moisture and growth, each with a hover and keyboard
-  readout and a table view;
-- a care timeline showing every watering and feeding;
-- the full history, and the plant's own QR code.
+- **headline tiles** for every factor its profile tracks, each carrying an
+  in-band / act-soon / correct-now status against that profile's target;
+- **Log a check** — only the fields its profile actually uses, so an outdoor
+  olive is not asked for humidity; a blank field records nothing rather than a
+  zero;
+- **trend charts** with the target band shaded behind the line, plus a hover and
+  keyboard readout and a table view on each;
+- a **care timeline** of watering and feeding, and a **work and health log** of
+  repots, pruning, pest sightings and graft checks;
+- **what to watch** for that species, the full history, and the plant's own QR
+  code.
 
-**Labels** prints the whole nursery as a QR label sheet. **Backup** exports and
-imports.
+**Labels** prints the whole nursery as a QR label sheet. **Sync** keeps devices
+in step automatically. **Backup** exports and imports by hand.
 
-### About the metrics
+## What it tracks
 
-You asked for four and listed five: pH, moisture, growth, watering and
-fertiliser. All five are tracked. They split naturally into two kinds, which is
-why they are charted differently:
+Factors split into three kinds, which is why they are presented differently.
 
-- **pH, moisture and growth** are measurements — they trend over time, so they
-  get line charts.
-- **Watering and fertiliser** are events — they happen or they don't, so they
-  get a timeline of dots rather than a line.
+**Measurements** trend over time, so they get line charts with the target band
+shaded behind them:
 
-Record growth the same way every time (new leader height, or trunk caliper —
-pick one and stay with it), or the trend measures your technique instead of
-the tree.
+| Factor | Unit | Notes |
+|---|---|---|
+| pH | — | pour-through leachate, not the pot surface |
+| Moisture | % | capacitive probe, same depth and spot each time |
+| EC | mS/cm | nutrient load, from the same pour-through sample |
+| Growth | mm | trunk caliper or leader height — pick one and stay with it |
+| Low / high temperature | °F | one range chart, both bands named |
+| Humidity | % | indoor profiles |
+| Light | lux | indoor profiles |
+| Chill hours | h | outdoor profiles — running hours below 45 °F |
+
+**Recurring care** happens or it doesn't, so watering and feeding get a timeline
+of dots rather than a line.
+
+**Occasional work and health** — repots, pruning and wiring, pest sightings,
+graft-line checks, rootstock suckers removed, and moving a plant in or out —
+lands in a dated log rather than a chart. These happen a few times a year, and a
+labelled list reads better than five more colour-coded lanes.
+
+### Care profiles
+
+A plant's **care profile** decides which factors it records and the bands each
+reading is judged against. Every reading is scored on the same three tiers the
+bench packet uses: **in band**, **act soon**, **correct now** — always as a
+glyph plus a word plus a colour, never colour alone.
+
+Profiles included:
+
+- **Bonsai bench — median program**, plus per-species profiles for Parrot's
+  beak, Hawaiian umbrella, Ginseng ficus and Dwarf pomegranate. Numbers are
+  transcribed from the *Bonsai Bench Environment Packet* (Aug 2026): the median
+  card, the per-species temperature envelopes, and the per-species soil
+  envelopes. The bench profile also carries the season program strip.
+- **Italian bergamot — container**, for a young grafted citrus that summers
+  outdoors and winters inside.
+- **Arbequina olive — container**, for a young grafted olive outdoors all year.
+- **No profile**, which records readings without judging them.
+
+Each profile carries a *What to watch* list on the plant's page — the failure
+modes that actually matter for that plant, rather than generic advice.
+
+### A caution on the olive
+
+Arbequina is among the hardier olives, but the usual hardiness figures — around
+15–20 °F — describe an **established tree in the ground**. A young grafted olive
+in a container has almost none of that buffer: a pot's root zone tracks air
+temperature instead of being insulated by soil mass. USDA zone 7 design lows run
+0–10 °F. Wintering it outdoors is workable, but plan protection before you need
+it, and log the low temperature each check so you know what it has actually been
+through. This is flagged in the app too, at the top of the olive's watch list.
 
 ---
 
-## Limitation: data is per-device
+## Sync, or the lack of it
 
-**Readings are stored in the browser's local storage on the device that entered
-them.** They are not synced. A plant logged on the greenhouse phone will not
-appear on the office laptop, and clearing site data erases it.
+By default **readings are stored in this browser on this device** and are not
+synced anywhere. That is the cost of having no server and no accounts: fine for
+one person on one phone, wrong for a bench shared between a phone and a laptop.
 
-This is the direct cost of having no server and no accounts. It is fine for one
-person working from one phone, and wrong for a team sharing a bench.
+There are two ways out, and they are not exclusive.
 
-What to do about it:
+### Manual: JSON backup
 
-- **Export a JSON backup regularly** (Backup → Download JSON backup). Importing
-  merges by ID, so importing the same file twice changes nothing and importing
-  the phone's export onto the laptop combines both sets.
-- **Export CSV for Excel or Sheets** — one row per check, ready for a
-  PivotTable. This is the bridge to the Office side of the question.
-- **If you need real sync**, the honest fix is a shared backend. `js/store.js`
-  is the only file that touches storage, so swapping localStorage for
-  Supabase, Airtable or a SharePoint list is a contained change — the views and
-  charts do not care where the data comes from.
+Backup → **Download JSON backup**, then **Import** it on the other device.
+Imports merge by record id and by edit time, so importing the same file twice
+changes nothing, and two devices' readings combine rather than overwrite.
+**Download CSV for Excel** gives one row per check with every factor as a
+column.
+
+### Automatic: Cloud Firestore sync
+
+The **Sync** page connects the app to a free Firebase project so devices keep
+themselves in step. It is free on the Spark plan, needs no card, and — unlike
+some free tiers — does not pause when idle, so a nursery you do not open for a
+fortnight in winter still works.
+
+There is no Firebase SDK: sync speaks to the Firestore REST API with `fetch`,
+so the app stays a set of plain files with no build step and no CDN. Losing the
+network is not an error state — readings are saved locally and go up when you
+reconnect.
+
+Setup is about ten minutes and the steps are printed on the Sync page itself:
+create a project, create a Firestore database, enable **Anonymous**
+authentication, publish the rules shown on that page, then paste the Project ID
+and Web API Key in and generate a **nursery code**. Entering that same code on
+another device joins it to the same nursery.
+
+Three things worth knowing before you turn it on:
+
+- **The code is the key.** There are no usernames. Anyone holding the nursery
+  code can read and write the nursery, exactly like an unguessable share link.
+  A generated code is 24 characters from a 32-character alphabet — about 120
+  bits, so it will not be guessed — but treat it as a password, not a username.
+- **Edits merge, they do not overwrite.** Each plant and each check syncs
+  independently, newest edit winning. Deletes are kept as tombstones so they
+  propagate properly instead of reappearing from whichever device still had the
+  record.
+- **Sync is not backup.** It copies your data; it does not version it. Keep
+  exporting a JSON file occasionally — that is what saves you from a mistaken
+  bulk delete, which sync would faithfully replicate everywhere.
 
 Scanning a label for a plant this device has never seen shows a clear message
-pointing at the import page, rather than a confusing empty dashboard.
+pointing at the sync and import pages, rather than a confusing empty dashboard.
 
 ---
 
@@ -148,7 +227,9 @@ pointing at the import page, rather than a confusing empty dashboard.
 index.html          shell and routes
 css/styles.css      theme tokens, light and dark
 js/qrcode.js        self-contained QR encoder (no CDN)
-js/store.js         plants, readings, import/export — the only storage code
+js/profiles.js      care profiles: tracked factors, target bands, watch lists
+js/store.js         plants, readings, merge and tombstones — the only storage code
+js/sync.js          optional Firestore sync over REST (no SDK, no CDN)
 js/charts.js        SVG charts, hover and keyboard readout, table views
 js/app.js           routing and views
 test/               verification, described below
@@ -175,6 +256,7 @@ view, so no value is reachable by colour or hover alone.
 pip install segno zxing-cpp numpy playwright pillow
 python3 test/verify_qr.py     # the QR encoder
 python3 test/smoke_app.py     # the app, in a real browser
+python3 test/sync_test.py     # two devices converging through sync
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
@@ -189,10 +271,24 @@ picks the smallest version that fits.
 > still decode identically; it just means the data region is compared by
 > decoding rather than by matrix equality.
 
-`smoke_app.py` drives a real Chromium: adds plants, logs checks, renders the
-label sheet, then takes the QR the sheet actually drew, decodes it, and follows
-the decoded URL to confirm it lands on the plant it names — proving the label
-loop end to end rather than just that a QR was drawn. It also round-trips the
-JSON export and checks that re-importing does not duplicate.
+`smoke_app.py` drives a real Chromium across all three profile kinds — indoor
+bench, container bergamot, container olive. It adds plants, logs checks carrying
+every factor, and confirms the profile actually drives the page: the bench tree
+gets seven chart cards and a season program, the olive gets a chill-hours field
+but no humidity or light, and a pH of 7.6 against a 6.0–7.0 band raises a status
+chip rather than being quietly plotted. Then it renders the label sheet, takes
+the QR the sheet actually drew, decodes it, and follows the decoded URL to
+confirm it lands on the plant it names — proving the label loop end to end
+rather than just that a QR was drawn. It also round-trips the JSON export and
+checks that re-importing does not duplicate.
+
+`sync_test.py` runs the real `js/sync.js` against a mock of the two Firestore
+REST endpoints, served from the same origin as the app — so it needs no Firebase
+project, no credentials and no network, while still exercising the actual
+sign-in, read, merge and write-back. Two browser contexts stand in for two
+devices. It checks that a plant made on A reaches B, that a reading added on B
+reaches A without losing A's own, that a delete propagates and **stays** deleted
+when a stale device pushes an old snapshot back, and that losing the network
+leaves local data intact and recovers when it returns.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.

@@ -1,10 +1,14 @@
 /*
  * Bonsai store — plants and readings, held in localStorage.
  *
- * localStorage is per-browser and per-device: it does not sync between the
- * greenhouse phone and the office laptop. That is a deliberate trade (no
- * server, no account, no subscription), and the JSON export/import below is
- * how you move a nursery between devices or back it up. See the README.
+ * localStorage is per-browser and per-device, so on its own it does not reach
+ * the greenhouse phone from the office laptop. Two things close that gap, and
+ * both come through mergeSnapshot below: the JSON export/import here, and the
+ * optional cloud sync in js/sync.js.
+ *
+ * Merging is by record id with the newest edit winning, and deletes are kept
+ * as tombstones rather than dropped — otherwise a device holding an old copy
+ * would quietly resurrect everything you had deleted.
  */
 (function (global) {
   'use strict';
@@ -71,14 +75,21 @@
 
   /* ------------------------------------------------------------- plants */
 
+  // Deleted records are kept as tombstones rather than removed, so a sync from
+  // a device that still has them cannot resurrect them. Everything that reads
+  // the nursery filters them out.
+  function alive(record) {
+    return record && !record.deletedAt;
+  }
+
   function listPlants() {
-    return load().plants.slice().sort(function (a, b) {
+    return load().plants.filter(alive).sort(function (a, b) {
       return (a.name || '').localeCompare(b.name || '');
     });
   }
 
   function getPlant(id) {
-    return load().plants.filter(function (p) { return p.id === id; })[0] || null;
+    return load().plants.filter(function (p) { return p.id === id && alive(p); })[0] || null;
   }
 
   function addPlant(fields) {
@@ -88,10 +99,12 @@
       name: (fields.name || '').trim() || 'Untitled',
       species: (fields.species || '').trim(),
       stage: fields.stage || 'cutting',
+      profileId: fields.profileId || 'generic',
       source: (fields.source || '').trim(),
       startedOn: fields.startedOn || today(),
       notes: (fields.notes || '').trim(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     data.plants.push(plant);
     persist();
@@ -101,17 +114,24 @@
   function updatePlant(id, fields) {
     var plant = getPlant(id);
     if (!plant) return null;
-    ['name', 'species', 'stage', 'source', 'startedOn', 'notes'].forEach(function (key) {
+    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes'].forEach(function (key) {
       if (fields[key] != null) plant[key] = fields[key];
     });
+    plant.updatedAt = new Date().toISOString();
     persist();
     return plant;
   }
 
   function deletePlant(id) {
+    var stamp = new Date().toISOString();
     var data = load();
-    data.plants = data.plants.filter(function (p) { return p.id !== id; });
-    data.entries = data.entries.filter(function (e) { return e.plantId !== id; });
+    data.plants.forEach(function (p) {
+      if (p.id === id) { p.deletedAt = stamp; p.updatedAt = stamp; }
+    });
+    // Tombstone the readings too, or a sync would leave them orphaned.
+    data.entries.forEach(function (e) {
+      if (e.plantId === id) { e.deletedAt = stamp; e.updatedAt = stamp; }
+    });
     persist();
   }
 
@@ -119,7 +139,7 @@
 
   function entriesFor(plantId) {
     return load().entries
-      .filter(function (e) { return e.plantId === plantId; })
+      .filter(function (e) { return e.plantId === plantId && alive(e); })
       .sort(function (a, b) { return a.at.localeCompare(b.at); });
   }
 
@@ -139,13 +159,29 @@
       at: fields.at ? new Date(fields.at).toISOString() : new Date().toISOString(),
       ph: numberOrNull(fields.ph),
       moisture: numberOrNull(fields.moisture),
+      ec: numberOrNull(fields.ec),
       growth: numberOrNull(fields.growth),
+      tempLow: numberOrNull(fields.tempLow),
+      tempHigh: numberOrNull(fields.tempHigh),
+      humidity: numberOrNull(fields.humidity),
+      light: numberOrNull(fields.light),
+      chill: numberOrNull(fields.chill),
       watered: !!fields.watered,
       waterMl: numberOrNull(fields.waterMl),
       fertilised: !!fields.fertilised,
       fertiliser: (fields.fertiliser || '').trim(),
       fertAmount: (fields.fertAmount || '').trim(),
-      note: (fields.note || '').trim()
+      // Occasional milestones. Kept as flags rather than chart series because
+      // they happen a few times a year, not on every check.
+      repotted: !!fields.repotted,
+      pruned: !!fields.pruned,
+      pestSeen: !!fields.pestSeen,
+      pestType: (fields.pestType || '').trim(),
+      suckersRemoved: !!fields.suckersRemoved,
+      graftChecked: !!fields.graftChecked,
+      moved: fields.moved || '',
+      note: (fields.note || '').trim(),
+      updatedAt: new Date().toISOString()
     };
     data.entries.push(entry);
     persist();
@@ -153,8 +189,10 @@
   }
 
   function deleteEntry(entryId) {
-    var data = load();
-    data.entries = data.entries.filter(function (e) { return e.id !== entryId; });
+    var stamp = new Date().toISOString();
+    load().entries.forEach(function (e) {
+      if (e.id === entryId) { e.deletedAt = stamp; e.updatedAt = stamp; }
+    });
     persist();
   }
 
@@ -177,20 +215,52 @@
       });
   }
 
+  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill'];
+  var EVENT_KEYS = ['watered', 'fertilised', 'repotted', 'pruned', 'pestSeen', 'suckersRemoved'];
+
+  // The most recent entry carrying each metric, and the most recent occurrence
+  // of each event — a check that measured only pH must not blank the rest.
   function latest(plantId) {
     var entries = entriesFor(plantId);
-    var out = { ph: null, moisture: null, growth: null, watered: null, fertilised: null, last: null };
+    var out = { last: null };
+    METRIC_KEYS.concat(EVENT_KEYS).forEach(function (key) { out[key] = null; });
     if (!entries.length) return out;
     out.last = entries[entries.length - 1];
     for (var i = entries.length - 1; i >= 0; i--) {
       var e = entries[i];
-      if (out.ph == null && e.ph != null) out.ph = e;
-      if (out.moisture == null && e.moisture != null) out.moisture = e;
-      if (out.growth == null && e.growth != null) out.growth = e;
-      if (out.watered == null && e.watered) out.watered = e;
-      if (out.fertilised == null && e.fertilised) out.fertilised = e;
+      METRIC_KEYS.forEach(function (key) {
+        if (out[key] == null && e[key] != null) out[key] = e;
+      });
+      EVENT_KEYS.forEach(function (key) {
+        if (out[key] == null && e[key]) out[key] = e;
+      });
     }
     return out;
+  }
+
+  var MILESTONES = [
+    { key: 'repotted', label: 'Repotted' },
+    { key: 'pruned', label: 'Pruned / wired' },
+    { key: 'pestSeen', label: 'Pest seen', detail: 'pestType', alert: true },
+    { key: 'suckersRemoved', label: 'Rootstock suckers removed' },
+    { key: 'graftChecked', label: 'Graft line checked' }
+  ];
+
+  function milestonesFor(plantId) {
+    var out = [];
+    entriesFor(plantId).forEach(function (e) {
+      MILESTONES.forEach(function (m) {
+        if (!e[m.key]) return;
+        out.push({
+          at: e.at, label: m.label, alert: !!m.alert,
+          detail: m.detail ? (e[m.detail] || '') : '', entryId: e.id
+        });
+      });
+      if (e.moved) {
+        out.push({ at: e.at, label: 'Moved ' + e.moved, alert: false, detail: '', entryId: e.id });
+      }
+    });
+    return out.sort(function (a, b) { return b.at.localeCompare(a.at); });
   }
 
   function daysSince(iso) {
@@ -211,40 +281,66 @@
     return JSON.stringify(load(), null, 2);
   }
 
+  function stampOf(record) {
+    return record.updatedAt || record.createdAt || '';
+  }
+
   /**
-   * Merge a backup into the current nursery. Plants and readings are matched
-   * on id, so re-importing the same file twice does not duplicate anything,
-   * and importing a phone's export onto a laptop combines the two.
+   * Merge two record lists by id, the newest write winning. Tombstones take
+   * part in that comparison like any other version, so a delete propagates
+   * between devices instead of being undone by whichever one still holds the
+   * record.
    */
-  function importJson(text) {
-    var incoming = JSON.parse(text);
+  function mergeLists(mine, theirs) {
+    var byId = {};
+    var order = [];
+
+    function absorb(record) {
+      if (!record || !record.id) return;
+      var existing = byId[record.id];
+      if (!existing) {
+        byId[record.id] = record;
+        order.push(record.id);
+        return;
+      }
+      if (stampOf(record) > stampOf(existing)) byId[record.id] = record;
+    }
+
+    mine.forEach(absorb);
+    var added = 0;
+    theirs.forEach(function (record) {
+      if (record && record.id && !byId[record.id]) added++;
+      absorb(record);
+    });
+    return { list: order.map(function (id) { return byId[id]; }), added: added };
+  }
+
+  // The whole nursery, tombstones included — what sync sends and receives.
+  function snapshot() {
+    var data = load();
+    return { version: 1, plants: data.plants, entries: data.entries };
+  }
+
+  /**
+   * Fold an incoming nursery into this one, reporting how many records were
+   * new. Both the import screen and the sync loop go through here, so manual
+   * and automatic merges cannot drift apart in behaviour.
+   */
+  function mergeSnapshot(incoming) {
     if (!incoming || !Array.isArray(incoming.plants) || !Array.isArray(incoming.entries)) {
-      throw new Error('That file does not look like a nursery backup.');
+      throw new Error('That does not look like a nursery backup.');
     }
     var data = load();
-    var plantIds = {};
-    data.plants.forEach(function (p) { plantIds[p.id] = true; });
-    var entryIds = {};
-    data.entries.forEach(function (e) { entryIds[e.id] = true; });
-
-    var addedPlants = 0;
-    var addedEntries = 0;
-    incoming.plants.forEach(function (p) {
-      if (p && p.id && !plantIds[p.id]) {
-        data.plants.push(p);
-        plantIds[p.id] = true;
-        addedPlants++;
-      }
-    });
-    incoming.entries.forEach(function (e) {
-      if (e && e.id && !entryIds[e.id]) {
-        data.entries.push(e);
-        entryIds[e.id] = true;
-        addedEntries++;
-      }
-    });
+    var plants = mergeLists(data.plants, incoming.plants);
+    var entries = mergeLists(data.entries, incoming.entries);
+    data.plants = plants.list;
+    data.entries = entries.list;
     persist();
-    return { plants: addedPlants, entries: addedEntries };
+    return { plants: plants.added, entries: entries.added };
+  }
+
+  function importJson(text) {
+    return mergeSnapshot(JSON.parse(text));
   }
 
   function csvCell(value) {
@@ -256,16 +352,24 @@
     var data = load();
     var names = {};
     data.plants.forEach(function (p) { names[p.id] = p; });
-    var header = ['plant_id', 'plant_name', 'species', 'date', 'ph', 'moisture',
-      'growth_mm', 'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount', 'note'];
+    var header = ['plant_id', 'plant_name', 'species', 'profile', 'date',
+      'ph', 'moisture_pct', 'ec_ms_cm', 'growth_mm', 'temp_low_f', 'temp_high_f',
+      'humidity_pct', 'light_lux', 'chill_hours',
+      'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount',
+      'repotted', 'pruned', 'pest_seen', 'pest_type', 'suckers_removed',
+      'graft_checked', 'moved', 'note'];
+    var yn = function (v) { return v ? 'yes' : 'no'; };
     var lines = [header.join(',')];
     data.entries.slice().sort(function (a, b) { return a.at.localeCompare(b.at); })
       .forEach(function (e) {
         var plant = names[e.plantId] || {};
         lines.push([
-          e.plantId, plant.name, plant.species, e.at, e.ph, e.moisture, e.growth,
-          e.watered ? 'yes' : 'no', e.waterMl, e.fertilised ? 'yes' : 'no',
-          e.fertiliser, e.fertAmount, e.note
+          e.plantId, plant.name, plant.species, plant.profileId, e.at,
+          e.ph, e.moisture, e.ec, e.growth, e.tempLow, e.tempHigh,
+          e.humidity, e.light, e.chill,
+          yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount,
+          yn(e.repotted), yn(e.pruned), yn(e.pestSeen), e.pestType, yn(e.suckersRemoved),
+          yn(e.graftChecked), e.moved, e.note
         ].map(csvCell).join(','));
       });
     return lines.join('\n');
@@ -291,11 +395,15 @@
     deleteEntry: deleteEntry,
     seriesFor: seriesFor,
     eventsFor: eventsFor,
+    milestonesFor: milestonesFor,
+    metricKeys: METRIC_KEYS,
     latest: latest,
     daysSince: daysSince,
     today: today,
     exportJson: exportJson,
     importJson: importJson,
+    snapshot: snapshot,
+    mergeSnapshot: mergeSnapshot,
     exportCsv: exportCsv,
     replaceAll: replaceAll,
     subscribe: subscribe
