@@ -159,37 +159,43 @@ def main() -> int:
 
         # --- bench tree: the packet's factors, ending in band
         bench_readings = [
-            ("2026-05-03", 6.6, 55, 1.0, 24, 64, 75, 55, 9200),
-            ("2026-05-17", 6.4, 48, 1.1, 29, 65, 76, 57, 9400),
-            ("2026-06-07", 6.3, 52, 1.2, 35, 66, 77, 54, 9100),
-            ("2026-06-28", 6.3, 45, 1.1, 41, 65, 76, 56, 9300),
+            ("2026-05-03", 6.3, 52, 1.0, 24, 64, 75, 55, 9200, 4),
+            ("2026-05-17", 6.4, 48, 1.1, 29, 65, 76, 57, 9400, 4),
+            ("2026-06-07", 6.2, 55, 1.2, 35, 66, 77, 54, 9100, 5),
+            ("2026-06-28", 6.3, 45, 1.1, 41, 65, 76, 56, 9300, 5),
         ]
-        for date, ph, moisture, ec, growth, low, high, rh, lux in bench_readings:
+        for date, ph, moisture, ec, growth, low, high, rh, lux, vigor in bench_readings:
             log_check(page, juniper, at=date, ph=ph, moisture=moisture, ec=ec, growth=growth,
-                      tempLow=low, tempHigh=high, humidity=rh, light=lux,
+                      tempLow=low, tempHigh=high, humidity=rh, light=lux, vigor=vigor,
                       watered=True, waterMl=250, fertilised=True, fertiliser="Biogold")
 
         goto_hash(f"#/p/{juniper}")
         page.wait_for_selector(".chart-svg")
-        check("bench profile tracks eight factors",
-              page.locator(".chart-grid-cards > .card").count() == 7,
+        check("bench profile charts every tracked factor",
+              page.locator(".chart-grid-cards > .card").count() == 8,
               f"{page.locator('.chart-grid-cards > .card').count()} chart cards")
+        check("this-month calendar shown",
+              page.locator("h2:has-text('This month')").count() == 1)
+        check("current month row highlighted", page.locator("tr.row-now").count() >= 1)
+        check("winter floor stated", page.locator(".floor-note").count() == 1,
+              page.locator(".floor-note").inner_text() if page.locator(".floor-note").count() else "absent")
         check("temperature drawn as one range chart",
               page.locator(".card:has(h2:text('Air temperature')) .legend-item").count() == 2)
         check("target bands shaded", page.locator("rect.chart-band").count() >= 4,
               f"{page.locator('rect.chart-band').count()} bands")
         check("in-band status shown", page.locator(".stat-tile .chip-good").count() >= 3,
               f"{page.locator('.stat-tile .chip-good').count()} good chips")
-        check("season program shown", page.locator("h2:has-text('Season program')").count() == 1)
+        check("full year table available",
+              page.locator("summary:has-text('The year on one page')").count() == 1)
 
         if args.screenshots:
             page.screenshot(path=str(args.screenshots / "bench-plant.png"), full_page=True)
 
         # --- bergamot: an out-of-band pH must be called out, not just plotted
-        log_check(page, bergamot, at="2026-06-05", ph=7.8, moisture=45, ec=1.4, growth=140,
+        log_check(page, bergamot, at="2026-06-05", ph=7.8, moisture=25, ec=1.4, growth=140,
                   tempLow=58, tempHigh=88, humidity=55, watered=True,
                   graftChecked=True, suckersRemoved=True, note="Two suckers below the graft.")
-        log_check(page, bergamot, at="2026-06-20", ph=7.6, moisture=40, ec=1.5, growth=147,
+        log_check(page, bergamot, at="2026-06-20", ph=7.6, moisture=22, ec=1.5, growth=147,
                   tempLow=61, tempHigh=91, humidity=52, watered=True,
                   pestSeen=True, pestType="citrus leaf miner")
         goto_hash(f"#/p/{bergamot}")
@@ -208,15 +214,20 @@ def main() -> int:
             page.screenshot(path=str(args.screenshots / "bergamot.png"), full_page=True)
 
         # --- olive: chill hours tracked, humidity and light are not
-        log_check(page, olive, at="2026-01-15", ph=7.2, moisture=30, growth=95,
-                  tempLow=18, tempHigh=44, chill=240)
+        log_check(page, olive, at="2026-01-15", ph=7.2, moisture=20, growth=95,
+                  tempLow=52, tempHigh=56, chill=240)
         goto_hash(f"#/p/{olive}")
         page.wait_for_selector(".chart-svg")
         olive_form = page.locator("form.card:has(h2:text('Log a check'))")
         check("olive tracks chill hours", olive_form.locator("[name=chill]").count() == 1)
-        check("olive does not track humidity or light",
-              olive_form.locator("[name=humidity]").count() == 0
-              and olive_form.locator("[name=light]").count() == 0)
+        # The handbook wants winter humidity under 50% with air movement, and
+        # 8+ hours of direct light, so the olive tracks both.
+        check("olive tracks humidity and light per its handbook",
+              olive_form.locator("[name=humidity]").count() == 1
+              and olive_form.locator("[name=light]").count() == 1)
+        check("olive is seasonal, so it has a move field",
+              olive_form.locator("[name=moved]").count() == 1)
+        check("olive vigor tracked", olive_form.locator("[name=vigor]").count() == 1)
         check("olive winter warning surfaced",
               page.locator('.watch-item[data-severity="high"]').count() >= 3,
               f"{page.locator('.watch-item[data-severity=high]').count()} high-severity items")
@@ -259,7 +270,7 @@ def main() -> int:
         total_checks = len(bench_readings) + 2 + 1
         check("CSV has a row per check", len(csv.strip().splitlines()) == total_checks + 1,
               f"{len(csv.strip().splitlines())} lines")
-        for column in ("ec_ms_cm", "temp_low_f", "humidity_pct", "chill_hours", "suckers_removed", "profile"):
+        for column in ("ec_ms_cm", "temp_low_f", "humidity_pct", "chill_hours", "vigor", "suckers_removed", "profile"):
             check(f"CSV carries {column}", column in header)
 
         backup = page.evaluate("window.BonsaiStore.exportJson()")
