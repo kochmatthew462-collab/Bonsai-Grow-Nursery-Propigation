@@ -30,6 +30,7 @@
   --series-light:     #008300;  /* slot 6 — light and chill never co-occur */
   --series-chill:     #008300;  /* slot 6 */
   --series-water:     #4a3aa7;  /* slot 7 */
+  --series-vigor:     #4a3aa7;  /* slot 7 — never charted alongside watering */
   /* Low and high temperature share one chart, so they take the diverging
      cool/warm pair rather than two categorical slots. */
   --series-templow:   #2a78d6;
@@ -72,6 +73,7 @@
     --series-light:     #008300;
     --series-chill:     #008300;
     --series-water:     #9085e9;
+    --series-vigor:     #9085e9;
     --series-templow:   #3987e5;
     --series-temphigh:  #e66767;
     --series-fert:      #008300;
@@ -545,6 +547,25 @@ pre.code {
   font-size: 0.78rem;
   line-height: 1.45;
   margin: 0;
+}
+
+tr.row-now td { background: var(--wash); font-weight: 600; }
+
+.month-facts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+.month-fact { display: grid; gap: 1px; }
+.month-fact .k { font-size: 0.72rem; color: var(--text-secondary); }
+.month-fact .v { font-size: 0.95rem; font-weight: 600; }
+
+.floor-note {
+  font-size: 0.85rem;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--wash);
+  border-left: 3px solid var(--status-critical);
 }
 
 ol.steps { margin: 0; padding-left: 20px; font-size: 0.88rem; color: var(--text-secondary); }

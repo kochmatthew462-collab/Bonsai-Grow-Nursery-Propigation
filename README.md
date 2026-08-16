@@ -1,10 +1,10 @@
-# Bonsai Grow / Nursery / Propagation Tracker
+# Koch's Tree Nursery Tracker
 
 Track **pH, moisture, EC, growth, temperature, humidity, light, watering and
 fertiliser** per plant, with a **QR label** on each pot that opens that plant's
-metrics when scanned. One site carries both an indoor bonsai bench and
-full-size trees living outdoors, and optionally syncs itself across devices for
-free.
+metrics when scanned. One site carries both the indoor bonsai bench and the
+container trees that move in and out with the seasons, and optionally syncs
+itself across devices for free.
 
 This repo contains a working tracker — a static web app with no accounts, no
 server and no subscription. It also answers the question that started it: *can
@@ -95,9 +95,10 @@ misread off a wet label from across the bench).
 
 - **headline tiles** for every factor its profile tracks, each carrying an
   in-band / act-soon / correct-now status against that profile's target;
-- **Log a check** — only the fields its profile actually uses, so an outdoor
-  olive is not asked for humidity; a blank field records nothing rather than a
-  zero;
+- **this month's row** from that tree's handbook calendar — where it should be,
+  watering interval, feed state and the key action;
+- **Log a check** — only the fields its profile actually uses, so a bench tree is
+  never asked for chill hours; a blank field records nothing rather than a zero;
 - **trend charts** with the target band shaded behind the line, plus a hover and
   keyboard readout and a table view on each;
 - a **care timeline** of watering and feeding, and a **work and health log** of
@@ -122,9 +123,10 @@ shaded behind them:
 | EC | mS/cm | nutrient load, from the same pour-through sample |
 | Growth | mm | trunk caliper or leader height — pick one and stay with it |
 | Low / high temperature | °F | one range chart, both bands named |
-| Humidity | % | indoor profiles |
-| Light | lux | indoor profiles |
-| Chill hours | h | outdoor profiles — running hours below 45 °F |
+| Humidity | % | bench probe, or winter rest RH for the container trees |
+| Light | lux | lux meter at the canopy, midday |
+| Chill hours | h | the olive — running hours below 45 °F |
+| Vigor | /5 | the book's quarterly 1–5 audit; no styling below 4 |
 
 **Recurring care** happens or it doesn't, so watering and feeding get a timeline
 of dots rather than a line.
@@ -147,24 +149,64 @@ Profiles included:
   beak, Hawaiian umbrella, Ginseng ficus and Dwarf pomegranate. Numbers are
   transcribed from the *Bonsai Bench Environment Packet* (Aug 2026): the median
   card, the per-species temperature envelopes, and the per-species soil
-  envelopes. The bench profile also carries the season program strip.
-- **Italian bergamot — container**, for a young grafted citrus that summers
-  outdoors and winters inside.
-- **Arbequina olive — container**, for a young grafted olive outdoors all year.
+  envelopes, plus the bench's own season programme as a month calendar.
+- **Italian bergamot — container** and **Arbequina olive — container**, both for
+  young grafted trees that summer outdoors and take a cool bright winter rest
+  indoors, with the full month-by-month calendar from each handbook.
 - **No profile**, which records readings without judging them.
 
 Each profile carries a *What to watch* list on the plant's page — the failure
 modes that actually matter for that plant, rather than generic advice.
 
-### A caution on the olive
+### Where the numbers come from
 
-Arbequina is among the hardier olives, but the usual hardiness figures — around
-15–20 °F — describe an **established tree in the ground**. A young grafted olive
-in a container has almost none of that buffer: a pot's root zone tracks air
-temperature instead of being insulated by soil mass. USDA zone 7 design lows run
-0–10 °F. Wintering it outdoors is workable, but plan protection before you need
-it, and log the low temperature each check so you know what it has actually been
-through. This is flagged in the app too, at the top of the olive's watch list.
+Every band, calendar row and watch item is transcribed from one of three
+handbooks, and each profile names its source on screen:
+
+| Tag | Handbook | Supplies |
+|---|---|---|
+| BENCH | *Bonsai Bench Environment Packet* (Aug 2026) | median card, per-species temperature and soil envelopes, the season program |
+| BOOK | *The Complete Bonsai Grower* | class defaults: substrate pH, leachate EC by development phase, VWC trigger, light by class, winter floors, the vigor rubric |
+| TREE | *The Arbequina Olive in Central Maryland* and *Bergamot in Central Maryland* | everything for the two container trees — both written for ZIP 20833, zone 7b |
+
+Where a species handbook and a class default disagree, **the species handbook
+wins** and the disagreement is written into the profile's note rather than
+quietly resolved. Three worth knowing:
+
+- **Olive winter temperature.** The book puts olive at 35–45 °F; the Arbequina
+  handbook specifies 50–55 °F sustained and says induction *fails* at 39 °F. The
+  app follows the handbook.
+- **Olive media pH.** 6.5–8.5, and explicitly *do not acidify* — the opposite of
+  the bench's 6.3 target. Chasing the bench number here would be actively wrong.
+- **Moisture scale.** The bench packet reads 35–65% running / water at 33% on its
+  own probe; the book quotes a 20–28% VWC trigger. These are different scales for
+  the same thing. The bench profiles keep the packet's numbers, the container
+  trees use the book's, and both say so in the note. **Do not mix the two.**
+
+### Seasonal targets
+
+Several bands change with the season, because the trees do. A bergamot's winter
+rest wants 45–58 °F and its summer wants nothing of the kind. Profiles declare
+their rest months, and the app judges readings against whichever band is in force
+today — the plant page says which one, and flags when a rest-season target
+applies.
+
+### The two container trees
+
+Both are young stem grafts in pots, and both move with the seasons:
+
+- **Bergamot** — out around May 10–20, in around Oct 1–15, then a **bright cool
+  rest at 45–58 °F**. The rest is not storage: it is what induces the following
+  spring's bloom. A bergamot kept at living-room temperature stays healthy and
+  never flowers.
+- **Arbequina olive** — out mid-to-late April, in late Oct to mid Nov, then
+  **50–55 °F for 10–12 weeks** banking 200–400 chill hours below 45 °F. Chill
+  fails from being too warm as readily as too cold: induction fails at 39 °F and
+  at 64 °F alike. Never below 40 °F at pot level — a container root zone sits at
+  air temperature, 20–30 °F colder than the same tree in the ground.
+
+The app tracks chill hours for the olive precisely because that number, more than
+any other, decides whether there is a crop.
 
 ---
 

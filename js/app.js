@@ -27,7 +27,7 @@
   var FORM_GROUPS = [
     { title: 'Soil', keys: ['ph', 'moisture', 'ec'] },
     { title: 'Air and light', keys: ['tempLow', 'tempHigh', 'humidity', 'light', 'chill'] },
-    { title: 'Growth', keys: ['growth'] }
+    { title: 'Growth and vigor', keys: ['growth', 'vigor'] }
   ];
 
   var STATUS_GLYPH = { good: '✓', warn: '▲', bad: '✕' };
@@ -280,6 +280,8 @@
     ]));
 
     view.appendChild(profileCard(plant, profile));
+    var calendar = calendarCard(profile);
+    if (calendar) view.appendChild(calendar);
     view.appendChild(kpiRow(plant, profile, latest));
     view.appendChild(logForm(plant, profile));
 
@@ -326,7 +328,6 @@
 
     view.appendChild(milestoneCard(id));
     if (profile.watch && profile.watch.length) view.appendChild(watchCard(profile));
-    if (profile.program) view.appendChild(programCard(profile));
     view.appendChild(historyCard(id, entries, profile));
     view.appendChild(labelCard(plant));
 
@@ -355,6 +356,10 @@
         profile.scientific ? h('span', { class: 'hint', text: profile.scientific }) : null
       ]),
       profile.summary ? h('p', { class: 'profile-summary', text: profile.summary }) : null,
+      profile.winterFloor
+        ? h('p', { class: 'floor-note', text: 'Winter floor ' + profile.winterFloor.tempF + ' °F — ' + profile.winterFloor.note })
+        : null,
+      profile.source ? h('p', { class: 'hint', text: 'Targets from: ' + profile.source }) : null,
       h('div', { class: 'field-grid' }, [
         field('Care profile', select, 'Changing this changes which factors are recorded and the bands they are judged against.')
       ]),
@@ -496,6 +501,63 @@
       unit: pair.unit, decimals: pair.decimals
     });
     return card;
+  }
+
+  // The handbooks all lead with a month-by-month table, and "what am I meant
+  // to be doing right now" is the most actionable thing on the page — so this
+  // sits directly under the profile, with today's row called out.
+  function calendarCard(profile) {
+    if (!profile.calendar || !profile.calendar.length) return null;
+    var now = new Date();
+    var row = profiles.currentMonth(profile, now);
+    var resting = profiles.isRestMonth(profile, now);
+    if (!row) return null;
+
+    var body = h('tbody');
+    profile.calendar.forEach(function (item, index) {
+      body.appendChild(h('tr', { class: index === now.getMonth() ? 'row-now' : '' }, [
+        h('td', { text: item.month }),
+        h('td', { text: item.where }),
+        h('td', { text: item.water }),
+        h('td', { text: item.feed }),
+        h('td', { text: item.action })
+      ]));
+    });
+
+    function fact(key, value) {
+      return h('div', { class: 'month-fact' }, [
+        h('span', { class: 'k', text: key }),
+        h('span', { class: 'v', text: value })
+      ]);
+    }
+
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'This month — ' + row.month }),
+        resting ? statusChip({ level: 'warn', label: 'winter rest — rest-season targets in force' }) : null
+      ]),
+      h('p', { class: 'profile-summary', text: row.action }),
+      h('div', { class: 'month-facts' }, [
+        fact('Where', row.where),
+        fact('Water', row.water),
+        fact('Feed', row.feed)
+      ]),
+      h('details', { class: 'table-view' }, [
+        h('summary', { text: 'The year on one page' }),
+        h('div', { class: 'table-wrap' }, [
+          h('table', {}, [
+            h('thead', {}, [h('tr', {}, [
+              h('th', { text: 'Month' }),
+              h('th', { text: 'Where' }),
+              h('th', { text: 'Water' }),
+              h('th', { text: 'Feed' }),
+              h('th', { text: 'Key action' })
+            ])]),
+            body
+          ])
+        ])
+      ])
+    ]);
   }
 
   function logForm(plant, profile) {
@@ -675,34 +737,6 @@
           h('div', { class: 'watch-body', text: item.body })
         ]);
       }))
-    ]);
-  }
-
-  function programCard(profile) {
-    var body = h('tbody');
-    profile.program.forEach(function (row) {
-      body.appendChild(h('tr', {}, [
-        h('td', { text: row.season }),
-        h('td', { text: row.light }),
-        h('td', { text: row.drip }),
-        h('td', { text: row.humidifier }),
-        h('td', { text: row.feed })
-      ]));
-    });
-    return h('div', { class: 'card' }, [
-      h('h2', { text: 'Season program' }),
-      h('div', { class: 'table-wrap' }, [
-        h('table', {}, [
-          h('thead', {}, [h('tr', {}, [
-            h('th', { text: 'Season' }),
-            h('th', { text: 'Lights' }),
-            h('th', { text: 'Drip' }),
-            h('th', { text: 'Humidifier' }),
-            h('th', { text: 'Feed' })
-          ])]),
-          body
-        ])
-      ])
     ]);
   }
 

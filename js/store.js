@@ -166,6 +166,7 @@
       humidity: numberOrNull(fields.humidity),
       light: numberOrNull(fields.light),
       chill: numberOrNull(fields.chill),
+      vigor: numberOrNull(fields.vigor),
       watered: !!fields.watered,
       waterMl: numberOrNull(fields.waterMl),
       fertilised: !!fields.fertilised,
@@ -215,7 +216,7 @@
       });
   }
 
-  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill'];
+  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill', 'vigor'];
   var EVENT_KEYS = ['watered', 'fertilised', 'repotted', 'pruned', 'pestSeen', 'suckersRemoved'];
 
   // The most recent entry carrying each metric, and the most recent occurrence
@@ -354,7 +355,7 @@
     data.plants.forEach(function (p) { names[p.id] = p; });
     var header = ['plant_id', 'plant_name', 'species', 'profile', 'date',
       'ph', 'moisture_pct', 'ec_ms_cm', 'growth_mm', 'temp_low_f', 'temp_high_f',
-      'humidity_pct', 'light_lux', 'chill_hours',
+      'humidity_pct', 'light_lux', 'chill_hours', 'vigor',
       'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount',
       'repotted', 'pruned', 'pest_seen', 'pest_type', 'suckers_removed',
       'graft_checked', 'moved', 'note'];
@@ -366,7 +367,7 @@
         lines.push([
           e.plantId, plant.name, plant.species, plant.profileId, e.at,
           e.ph, e.moisture, e.ec, e.growth, e.tempLow, e.tempHigh,
-          e.humidity, e.light, e.chill,
+          e.humidity, e.light, e.chill, e.vigor,
           yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount,
           yn(e.repotted), yn(e.pruned), yn(e.pestSeen), e.pestType, yn(e.suckersRemoved),
           yn(e.graftChecked), e.moved, e.note
