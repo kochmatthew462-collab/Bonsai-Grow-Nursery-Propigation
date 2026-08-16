@@ -123,18 +123,27 @@
   /* ------------------------------------------------------ trend chart */
 
   /**
-   * A single-series trend over time. One series means no legend box — the card
-   * title already names what is plotted — and the latest value rides the line
-   * as a direct label.
+   * A trend over time carrying one or two series. Two series (a low/high
+   * range) get a legend from the caller; one needs none, because the card
+   * title already names what is plotted. The latest value of each series
+   * rides its line as a direct label.
+   *
+   * options: {
+   *   series:   [{ name, color, points: [{ at, value }] }],
+   *   bands:    optional target zones [{ good: [lo, hi], label }] — a chart
+   *             plotting two series shades and names one band per series, so
+   *             it is never ambiguous which zone belongs to which line,
+   *   name, unit, decimals
+   * }
    */
   function trend(container, options) {
-    var points = options.points || [];
-    var color = options.color;
+    var series = (options.series || []).filter(function (s) { return s.points && s.points.length; });
+    var bands = (options.bands || []).filter(function (b) { return b && b.good; });
     var decimals = options.decimals == null ? 1 : options.decimals;
     var unit = options.unit || '';
 
     function draw() {
-      if (!points.length) {
+      if (!series.length) {
         emptyState(container, 'No ' + options.name.toLowerCase() + ' readings yet.');
         return;
       }
@@ -142,17 +151,28 @@
       var tooltip = makeTooltip(container);
 
       var width = Math.max(240, container.clientWidth);
-      var padding = { top: 14, right: 58, bottom: 26, left: 42 };
+      var padding = { top: 16, right: 62, bottom: 26, left: 44 };
       var plotHeight = 132;
       var height = plotHeight + padding.top + padding.bottom;
 
-      var values = points.map(function (p) { return p.value; });
+      var values = [];
+      series.forEach(function (s) {
+        s.points.forEach(function (p) { values.push(p.value); });
+      });
+      // Keep every target band on screen even when readings sit outside them.
+      bands.forEach(function (b) { values.push(b.good[0], b.good[1]); });
+
       var scale = niceTicks(Math.min.apply(null, values), Math.max.apply(null, values), 4);
       var tickDecimals = exactDecimals(scale.ticks);
 
-      var times = points.map(function (p) { return new Date(p.at).getTime(); });
-      var tMin = Math.min.apply(null, times);
-      var tMax = Math.max.apply(null, times);
+      var times = [];
+      series.forEach(function (s) {
+        s.points.forEach(function (p) { if (times.indexOf(p.at) < 0) times.push(p.at); });
+      });
+      times.sort();
+      var stamps = times.map(function (t) { return new Date(t).getTime(); });
+      var tMin = Math.min.apply(null, stamps);
+      var tMax = Math.max.apply(null, stamps);
       var innerWidth = width - padding.left - padding.right;
 
       function xOf(time) {
@@ -164,12 +184,30 @@
         return padding.top + plotHeight - ((value - scale.min) / span) * plotHeight;
       }
 
+      var label = options.name + ' over time, ' + times.length +
+        (times.length === 1 ? ' reading' : ' readings');
       var svg = el('svg', {
         width: width, height: height, viewBox: '0 0 ' + width + ' ' + height,
-        role: 'img', tabindex: '0',
-        'aria-label': options.name + ' over time, ' + points.length + ' readings'
+        role: 'img', tabindex: '0', 'aria-label': label
       });
       svg.classList.add('chart-svg');
+
+      // Target bands sit behind everything. They are reference zones rather
+      // than data marks, so they wear a neutral wash, never a series hue.
+      bands.forEach(function (b) {
+        var bandTop = yOf(Math.min(b.good[1], scale.max));
+        var bandBottom = yOf(Math.max(b.good[0], scale.min));
+        svg.appendChild(el('rect', {
+          x: padding.left, y: bandTop, width: innerWidth,
+          height: Math.max(1, bandBottom - bandTop), class: 'chart-band'
+        }));
+        var bandText = el('text', {
+          x: padding.left + 4, y: Math.max(10, bandTop - 3), class: 'chart-band-label'
+        });
+        bandText.textContent = (b.label || 'target') + ' ' +
+          trimNumber(b.good[0], tickDecimals) + '–' + trimNumber(b.good[1], tickDecimals);
+        svg.appendChild(bandText);
+      });
 
       // Gridlines and y-axis ticks.
       scale.ticks.forEach(function (tick) {
@@ -178,93 +216,135 @@
         svg.appendChild(el('line', {
           x1: padding.left, x2: width - padding.right, y1: y, y2: y, class: 'chart-grid'
         }));
-        var label = el('text', { x: padding.left - 8, y: y + 4, class: 'chart-axis-text', 'text-anchor': 'end' });
-        label.textContent = trimNumber(tick, tickDecimals);
-        svg.appendChild(label);
-      });
-
-      // X-axis labels: first and last reading, plus the middle when there is room.
-      var xLabelIndices = points.length > 2 ? [0, Math.floor(points.length / 2), points.length - 1] : [0, points.length - 1];
-      xLabelIndices.filter(function (v, i, a) { return a.indexOf(v) === i; }).forEach(function (index) {
         var text = el('text', {
-          x: xOf(times[index]), y: padding.top + plotHeight + 18,
-          class: 'chart-axis-text', 'text-anchor': index === 0 ? 'start' : (index === points.length - 1 ? 'end' : 'middle')
+          x: padding.left - 8, y: y + 4, class: 'chart-axis-text', 'text-anchor': 'end'
         });
-        text.textContent = formatDate(points[index].at);
+        text.textContent = trimNumber(tick, tickDecimals);
         svg.appendChild(text);
       });
 
-      // The line itself.
-      if (points.length > 1) {
-        var d = points.map(function (p, i) {
-          return (i ? 'L' : 'M') + xOf(times[i]).toFixed(2) + ' ' + yOf(p.value).toFixed(2);
-        }).join(' ');
-        svg.appendChild(el('path', { d: d, fill: 'none', stroke: color, 'stroke-width': '2',
-          'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-      }
+      // X-axis: first and last reading, plus the middle when there is room.
+      var xIndices = times.length > 2
+        ? [0, Math.floor(times.length / 2), times.length - 1]
+        : [0, times.length - 1];
+      xIndices.filter(function (v, i, a) { return a.indexOf(v) === i; }).forEach(function (index) {
+        var text = el('text', {
+          x: xOf(stamps[index]), y: padding.top + plotHeight + 18, class: 'chart-axis-text',
+          'text-anchor': index === 0 ? 'start' : (index === times.length - 1 ? 'end' : 'middle')
+        });
+        text.textContent = formatDate(times[index]);
+        svg.appendChild(text);
+      });
 
-      // Crosshair, hidden until the pointer or keyboard picks a reading.
-      var crosshair = el('line', { class: 'chart-crosshair', y1: padding.top, y2: padding.top + plotHeight });
+      // Lines.
+      series.forEach(function (s) {
+        if (s.points.length < 2) return;
+        var d = s.points.map(function (p, i) {
+          return (i ? 'L' : 'M') + xOf(new Date(p.at).getTime()).toFixed(2) +
+            ' ' + yOf(p.value).toFixed(2);
+        }).join(' ');
+        svg.appendChild(el('path', {
+          d: d, fill: 'none', stroke: s.color, 'stroke-width': '2',
+          'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+        }));
+      });
+
+      var crosshair = el('line', {
+        class: 'chart-crosshair', y1: padding.top, y2: padding.top + plotHeight
+      });
       crosshair.style.display = 'none';
       svg.appendChild(crosshair);
 
-      var hoverDot = el('circle', { r: 4, fill: color, class: 'chart-hover-dot' });
-      hoverDot.style.display = 'none';
-      svg.appendChild(hoverDot);
-
-      // Endpoint marker: 8px, with a 2px surface ring so it stays legible.
-      var lastIndex = points.length - 1;
-      svg.appendChild(el('circle', {
-        cx: xOf(times[lastIndex]), cy: yOf(points[lastIndex].value), r: 4,
-        fill: color, stroke: 'var(--surface-1)', 'stroke-width': '2'
-      }));
-
-      // Direct label for the latest value, in a text token rather than the hue.
-      var endLabel = el('text', {
-        x: xOf(times[lastIndex]) + 10, y: yOf(points[lastIndex].value) + 4,
-        class: 'chart-end-label'
+      var hoverDots = series.map(function (s) {
+        var dot = el('circle', { r: 4, fill: s.color, class: 'chart-hover-dot' });
+        dot.style.display = 'none';
+        svg.appendChild(dot);
+        return dot;
       });
-      endLabel.textContent = trimNumber(points[lastIndex].value, decimals) + (unit ? ' ' + unit : '');
-      svg.appendChild(endLabel);
+
+      // Endpoint markers carry a 2px surface ring so they stay legible where
+      // two series cross near the right edge.
+      var endLabels = [];
+      series.forEach(function (s) {
+        var last = s.points[s.points.length - 1];
+        var x = xOf(new Date(last.at).getTime());
+        var y = yOf(last.value);
+        svg.appendChild(el('circle', {
+          cx: x, cy: y, r: 4, fill: s.color, stroke: 'var(--surface-1)', 'stroke-width': '2'
+        }));
+        endLabels.push({ x: x + 10, y: y, text: trimNumber(last.value, decimals) + (unit ? ' ' + unit : '') });
+      });
+
+      // Nudge colliding end labels apart rather than letting them overlap.
+      if (endLabels.length === 2 && Math.abs(endLabels[0].y - endLabels[1].y) < 13) {
+        var higher = endLabels[0].y <= endLabels[1].y ? endLabels[0] : endLabels[1];
+        var lower = higher === endLabels[0] ? endLabels[1] : endLabels[0];
+        higher.y -= 6;
+        lower.y += 7;
+      }
+      endLabels.forEach(function (item) {
+        var text = el('text', { x: item.x, y: item.y + 4, class: 'chart-end-label' });
+        text.textContent = item.text;
+        svg.appendChild(text);
+      });
+
+      function valueAt(s, at) {
+        for (var i = 0; i < s.points.length; i++) {
+          if (s.points[i].at === at) return s.points[i].value;
+        }
+        return null;
+      }
 
       function selectIndex(index) {
-        if (index < 0 || index >= points.length) return;
-        var x = xOf(times[index]);
-        var y = yOf(points[index].value);
+        if (index < 0 || index >= times.length) return;
+        var at = times[index];
+        var x = xOf(stamps[index]);
         crosshair.setAttribute('x1', x);
         crosshair.setAttribute('x2', x);
         crosshair.style.display = '';
-        hoverDot.setAttribute('cx', x);
-        hoverDot.setAttribute('cy', y);
-        hoverDot.style.display = '';
-        tooltip.show(x, y, [{
-          color: color,
-          value: trimNumber(points[index].value, decimals) + (unit ? ' ' + unit : ''),
-          label: formatDateLong(points[index].at)
-        }]);
+
+        var rows = [];
+        series.forEach(function (s, i) {
+          var value = valueAt(s, at);
+          if (value == null) {
+            hoverDots[i].style.display = 'none';
+            return;
+          }
+          var y = yOf(value);
+          hoverDots[i].setAttribute('cx', x);
+          hoverDots[i].setAttribute('cy', y);
+          hoverDots[i].style.display = '';
+          rows.push({
+            color: s.color,
+            value: trimNumber(value, decimals) + (unit ? ' ' + unit : ''),
+            label: series.length > 1 ? s.name : formatDateLong(at)
+          });
+        });
+        if (series.length > 1) rows.push({ value: formatDateLong(at), label: '' });
+        if (rows.length) tooltip.show(x, yOf(scale.max), rows);
       }
 
       function clear() {
         crosshair.style.display = 'none';
-        hoverDot.style.display = 'none';
+        hoverDots.forEach(function (dot) { dot.style.display = 'none'; });
         tooltip.hide();
       }
 
-      // The crosshair finds the nearest reading, so the reader aims at a date
-      // rather than at a 2px line.
+      // The crosshair snaps to the nearest reading, so the reader aims at a
+      // date rather than at a 2px line.
       function nearestTo(clientX) {
         var rect = svg.getBoundingClientRect();
         var x = clientX - rect.left;
         var best = 0;
         var bestDistance = Infinity;
-        times.forEach(function (time, i) {
-          var distance = Math.abs(xOf(time) - x);
+        stamps.forEach(function (stamp, i) {
+          var distance = Math.abs(xOf(stamp) - x);
           if (distance < bestDistance) { bestDistance = distance; best = i; }
         });
         return best;
       }
 
-      var current = lastIndex;
+      var current = times.length - 1;
       svg.addEventListener('pointermove', function (event) {
         current = nearestTo(event.clientX);
         selectIndex(current);
@@ -273,7 +353,7 @@
       svg.addEventListener('focus', function () { selectIndex(current); });
       svg.addEventListener('blur', clear);
       svg.addEventListener('keydown', function (event) {
-        if (event.key === 'ArrowRight') current = Math.min(points.length - 1, current + 1);
+        if (event.key === 'ArrowRight') current = Math.min(times.length - 1, current + 1);
         else if (event.key === 'ArrowLeft') current = Math.max(0, current - 1);
         else return;
         event.preventDefault();

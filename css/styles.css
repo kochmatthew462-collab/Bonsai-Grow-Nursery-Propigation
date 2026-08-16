@@ -23,10 +23,26 @@
   --critical:        #d03b3b;
 
   --series-ph:        #2a78d6;  /* categorical slot 1 */
-  --series-moisture:  #1baf7a;  /* slot 3 */
   --series-growth:    #eb6834;  /* slot 2 */
+  --series-moisture:  #1baf7a;  /* slot 3 */
+  --series-ec:        #eda100;  /* slot 4 */
+  --series-humidity:  #e87ba4;  /* slot 5 */
+  --series-light:     #008300;  /* slot 6 — light and chill never co-occur */
+  --series-chill:     #008300;  /* slot 6 */
   --series-water:     #4a3aa7;  /* slot 7 */
+  /* Low and high temperature share one chart, so they take the diverging
+     cool/warm pair rather than two categorical slots. */
+  --series-templow:   #2a78d6;
+  --series-temphigh:  #e34948;  /* slot 8 */
   --series-fert:      #008300;  /* slot 6 */
+
+  /* Reserved status palette — never reused for a series. Always shipped with
+     an icon and a label so state never rests on colour alone. */
+  --status-good:      #0ca30c;
+  --status-warn:      #fab219;
+  --status-serious:   #ec835a;
+  --status-critical:  #d03b3b;
+  --band-fill:        rgba(11, 11, 11, 0.045);
 
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -49,10 +65,22 @@
     --critical:        #e66767;
 
     --series-ph:        #3987e5;
-    --series-moisture:  #199e70;
     --series-growth:    #d95926;
+    --series-moisture:  #199e70;
+    --series-ec:        #c98500;
+    --series-humidity:  #d55181;
+    --series-light:     #008300;
+    --series-chill:     #008300;
     --series-water:     #9085e9;
+    --series-templow:   #3987e5;
+    --series-temphigh:  #e66767;
     --series-fert:      #008300;
+
+    --status-good:      #0ca30c;
+    --status-warn:      #fab219;
+    --status-serious:   #ec835a;
+    --status-critical:  #d03b3b;
+    --band-fill:        rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -219,9 +247,10 @@ input[type="checkbox"] { width: auto; }
 
 .card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
 }
 
 /* ----------------------------------------------------------- stat tiles */
@@ -429,6 +458,59 @@ details.table-view summary {
   aspect-ratio: 4 / 3;
   object-fit: cover;
 }
+
+/* --------------------------------------------------------- status chips */
+
+/* Status always carries a glyph and a word; colour is the third channel. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.chip-glyph { font-size: 0.8rem; line-height: 1; }
+.chip-good     { color: var(--success-text); border-color: color-mix(in srgb, var(--status-good) 40%, transparent); }
+.chip-warn     { color: var(--text-primary); border-color: color-mix(in srgb, var(--status-warn) 55%, transparent); }
+.chip-bad      { color: var(--critical);     border-color: color-mix(in srgb, var(--status-critical) 45%, transparent); }
+.chip-none     { color: var(--text-muted); }
+
+.chart-band-label {
+  fill: var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+}
+.chart-band { fill: var(--band-fill); }
+
+/* ------------------------------------------------------------- guidance */
+
+.watch-list { display: grid; gap: 10px; }
+
+.watch-item {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--wash);
+  border-left: 3px solid var(--axis);
+}
+.watch-item[data-severity="high"] { border-left-color: var(--status-serious); }
+.watch-title { font-weight: 600; font-size: 0.88rem; }
+.watch-body { font-size: 0.85rem; color: var(--text-secondary); }
+
+.profile-summary {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  max-width: 74ch;
+}
+
+.band-note { font-size: 0.78rem; color: var(--text-muted); }
+
+.milestone-type { font-weight: 600; }
 
 /* ---------------------------------------------------------------- print */
 

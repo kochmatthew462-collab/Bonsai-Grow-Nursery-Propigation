@@ -88,6 +88,7 @@
       name: (fields.name || '').trim() || 'Untitled',
       species: (fields.species || '').trim(),
       stage: fields.stage || 'cutting',
+      profileId: fields.profileId || 'generic',
       source: (fields.source || '').trim(),
       startedOn: fields.startedOn || today(),
       notes: (fields.notes || '').trim(),
@@ -101,7 +102,7 @@
   function updatePlant(id, fields) {
     var plant = getPlant(id);
     if (!plant) return null;
-    ['name', 'species', 'stage', 'source', 'startedOn', 'notes'].forEach(function (key) {
+    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes'].forEach(function (key) {
       if (fields[key] != null) plant[key] = fields[key];
     });
     persist();
@@ -139,12 +140,27 @@
       at: fields.at ? new Date(fields.at).toISOString() : new Date().toISOString(),
       ph: numberOrNull(fields.ph),
       moisture: numberOrNull(fields.moisture),
+      ec: numberOrNull(fields.ec),
       growth: numberOrNull(fields.growth),
+      tempLow: numberOrNull(fields.tempLow),
+      tempHigh: numberOrNull(fields.tempHigh),
+      humidity: numberOrNull(fields.humidity),
+      light: numberOrNull(fields.light),
+      chill: numberOrNull(fields.chill),
       watered: !!fields.watered,
       waterMl: numberOrNull(fields.waterMl),
       fertilised: !!fields.fertilised,
       fertiliser: (fields.fertiliser || '').trim(),
       fertAmount: (fields.fertAmount || '').trim(),
+      // Occasional milestones. Kept as flags rather than chart series because
+      // they happen a few times a year, not on every check.
+      repotted: !!fields.repotted,
+      pruned: !!fields.pruned,
+      pestSeen: !!fields.pestSeen,
+      pestType: (fields.pestType || '').trim(),
+      suckersRemoved: !!fields.suckersRemoved,
+      graftChecked: !!fields.graftChecked,
+      moved: fields.moved || '',
       note: (fields.note || '').trim()
     };
     data.entries.push(entry);
@@ -177,20 +193,52 @@
       });
   }
 
+  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill'];
+  var EVENT_KEYS = ['watered', 'fertilised', 'repotted', 'pruned', 'pestSeen', 'suckersRemoved'];
+
+  // The most recent entry carrying each metric, and the most recent occurrence
+  // of each event — a check that measured only pH must not blank the rest.
   function latest(plantId) {
     var entries = entriesFor(plantId);
-    var out = { ph: null, moisture: null, growth: null, watered: null, fertilised: null, last: null };
+    var out = { last: null };
+    METRIC_KEYS.concat(EVENT_KEYS).forEach(function (key) { out[key] = null; });
     if (!entries.length) return out;
     out.last = entries[entries.length - 1];
     for (var i = entries.length - 1; i >= 0; i--) {
       var e = entries[i];
-      if (out.ph == null && e.ph != null) out.ph = e;
-      if (out.moisture == null && e.moisture != null) out.moisture = e;
-      if (out.growth == null && e.growth != null) out.growth = e;
-      if (out.watered == null && e.watered) out.watered = e;
-      if (out.fertilised == null && e.fertilised) out.fertilised = e;
+      METRIC_KEYS.forEach(function (key) {
+        if (out[key] == null && e[key] != null) out[key] = e;
+      });
+      EVENT_KEYS.forEach(function (key) {
+        if (out[key] == null && e[key]) out[key] = e;
+      });
     }
     return out;
+  }
+
+  var MILESTONES = [
+    { key: 'repotted', label: 'Repotted' },
+    { key: 'pruned', label: 'Pruned / wired' },
+    { key: 'pestSeen', label: 'Pest seen', detail: 'pestType', alert: true },
+    { key: 'suckersRemoved', label: 'Rootstock suckers removed' },
+    { key: 'graftChecked', label: 'Graft line checked' }
+  ];
+
+  function milestonesFor(plantId) {
+    var out = [];
+    entriesFor(plantId).forEach(function (e) {
+      MILESTONES.forEach(function (m) {
+        if (!e[m.key]) return;
+        out.push({
+          at: e.at, label: m.label, alert: !!m.alert,
+          detail: m.detail ? (e[m.detail] || '') : '', entryId: e.id
+        });
+      });
+      if (e.moved) {
+        out.push({ at: e.at, label: 'Moved ' + e.moved, alert: false, detail: '', entryId: e.id });
+      }
+    });
+    return out.sort(function (a, b) { return b.at.localeCompare(a.at); });
   }
 
   function daysSince(iso) {
@@ -256,16 +304,24 @@
     var data = load();
     var names = {};
     data.plants.forEach(function (p) { names[p.id] = p; });
-    var header = ['plant_id', 'plant_name', 'species', 'date', 'ph', 'moisture',
-      'growth_mm', 'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount', 'note'];
+    var header = ['plant_id', 'plant_name', 'species', 'profile', 'date',
+      'ph', 'moisture_pct', 'ec_ms_cm', 'growth_mm', 'temp_low_f', 'temp_high_f',
+      'humidity_pct', 'light_lux', 'chill_hours',
+      'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount',
+      'repotted', 'pruned', 'pest_seen', 'pest_type', 'suckers_removed',
+      'graft_checked', 'moved', 'note'];
+    var yn = function (v) { return v ? 'yes' : 'no'; };
     var lines = [header.join(',')];
     data.entries.slice().sort(function (a, b) { return a.at.localeCompare(b.at); })
       .forEach(function (e) {
         var plant = names[e.plantId] || {};
         lines.push([
-          e.plantId, plant.name, plant.species, e.at, e.ph, e.moisture, e.growth,
-          e.watered ? 'yes' : 'no', e.waterMl, e.fertilised ? 'yes' : 'no',
-          e.fertiliser, e.fertAmount, e.note
+          e.plantId, plant.name, plant.species, plant.profileId, e.at,
+          e.ph, e.moisture, e.ec, e.growth, e.tempLow, e.tempHigh,
+          e.humidity, e.light, e.chill,
+          yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount,
+          yn(e.repotted), yn(e.pruned), yn(e.pestSeen), e.pestType, yn(e.suckersRemoved),
+          yn(e.graftChecked), e.moved, e.note
         ].map(csvCell).join(','));
       });
     return lines.join('\n');
@@ -291,6 +347,8 @@
     deleteEntry: deleteEntry,
     seriesFor: seriesFor,
     eventsFor: eventsFor,
+    milestonesFor: milestonesFor,
+    metricKeys: METRIC_KEYS,
     latest: latest,
     daysSince: daysSince,
     today: today,

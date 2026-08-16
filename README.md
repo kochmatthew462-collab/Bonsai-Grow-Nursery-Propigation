@@ -1,7 +1,9 @@
 # Bonsai Grow / Nursery / Propagation Tracker
 
-Track **pH, moisture, growth, watering and fertiliser** per plant, with a
-**QR label** on each pot that opens that plant's metrics when scanned.
+Track **pH, moisture, EC, growth, temperature, humidity, light, watering and
+fertiliser** per plant, with a **QR label** on each pot that opens that plant's
+metrics when scanned. One site carries both an indoor bonsai bench and
+full-size trees living outdoors.
 
 This repo contains a working tracker — a static web app with no accounts, no
 server and no subscription. It also answers the question that started it: *can
@@ -71,8 +73,9 @@ live somewhere real. GitHub Pages is free and enough:
 1. Repo **Settings → Pages**.
 2. **Source:** deploy from a branch, pick your branch and `/ (root)`.
 3. Wait for the green tick, then open the published URL.
-4. Go to **Labels**, confirm the **Base URL** matches the published address,
-   press **Apply**, then **Print**.
+4. Go to **Labels** and press **Print**. The Base URL fills itself in from the
+   address you are on, so it only needs changing if you print from one device
+   and scan against another.
 
 Print onto weatherproof or laminated stock — labels live outdoors, and a QR
 code that has bleached or delaminated will not scan.
@@ -87,32 +90,78 @@ misread off a wet label from across the bench).
 
 **A plant's page** has:
 
-- five headline tiles — latest pH, moisture, growth, days since watering, days
-  since feeding;
-- **Log a check** — fill in only what you actually measured; a blank field
-  records nothing rather than a zero;
-- trend charts for pH, moisture and growth, each with a hover and keyboard
-  readout and a table view;
-- a care timeline showing every watering and feeding;
-- the full history, and the plant's own QR code.
+- **headline tiles** for every factor its profile tracks, each carrying an
+  in-band / act-soon / correct-now status against that profile's target;
+- **Log a check** — only the fields its profile actually uses, so an outdoor
+  olive is not asked for humidity; a blank field records nothing rather than a
+  zero;
+- **trend charts** with the target band shaded behind the line, plus a hover and
+  keyboard readout and a table view on each;
+- a **care timeline** of watering and feeding, and a **work and health log** of
+  repots, pruning, pest sightings and graft checks;
+- **what to watch** for that species, the full history, and the plant's own QR
+  code.
 
 **Labels** prints the whole nursery as a QR label sheet. **Backup** exports and
 imports.
 
-### About the metrics
+## What it tracks
 
-You asked for four and listed five: pH, moisture, growth, watering and
-fertiliser. All five are tracked. They split naturally into two kinds, which is
-why they are charted differently:
+Factors split into three kinds, which is why they are presented differently.
 
-- **pH, moisture and growth** are measurements — they trend over time, so they
-  get line charts.
-- **Watering and fertiliser** are events — they happen or they don't, so they
-  get a timeline of dots rather than a line.
+**Measurements** trend over time, so they get line charts with the target band
+shaded behind them:
 
-Record growth the same way every time (new leader height, or trunk caliper —
-pick one and stay with it), or the trend measures your technique instead of
-the tree.
+| Factor | Unit | Notes |
+|---|---|---|
+| pH | — | pour-through leachate, not the pot surface |
+| Moisture | % | capacitive probe, same depth and spot each time |
+| EC | mS/cm | nutrient load, from the same pour-through sample |
+| Growth | mm | trunk caliper or leader height — pick one and stay with it |
+| Low / high temperature | °F | one range chart, both bands named |
+| Humidity | % | indoor profiles |
+| Light | lux | indoor profiles |
+| Chill hours | h | outdoor profiles — running hours below 45 °F |
+
+**Recurring care** happens or it doesn't, so watering and feeding get a timeline
+of dots rather than a line.
+
+**Occasional work and health** — repots, pruning and wiring, pest sightings,
+graft-line checks, rootstock suckers removed, and moving a plant in or out —
+lands in a dated log rather than a chart. These happen a few times a year, and a
+labelled list reads better than five more colour-coded lanes.
+
+### Care profiles
+
+A plant's **care profile** decides which factors it records and the bands each
+reading is judged against. Every reading is scored on the same three tiers the
+bench packet uses: **in band**, **act soon**, **correct now** — always as a
+glyph plus a word plus a colour, never colour alone.
+
+Profiles included:
+
+- **Bonsai bench — median program**, plus per-species profiles for Parrot's
+  beak, Hawaiian umbrella, Ginseng ficus and Dwarf pomegranate. Numbers are
+  transcribed from the *Bonsai Bench Environment Packet* (Aug 2026): the median
+  card, the per-species temperature envelopes, and the per-species soil
+  envelopes. The bench profile also carries the season program strip.
+- **Italian bergamot — container**, for a young grafted citrus that summers
+  outdoors and winters inside.
+- **Arbequina olive — container**, for a young grafted olive outdoors all year.
+- **No profile**, which records readings without judging them.
+
+Each profile carries a *What to watch* list on the plant's page — the failure
+modes that actually matter for that plant, rather than generic advice.
+
+### A caution on the olive
+
+Arbequina is among the hardier olives, but the usual hardiness figures — around
+15–20 °F — describe an **established tree in the ground**. A young grafted olive
+in a container has almost none of that buffer: a pot's root zone tracks air
+temperature instead of being insulated by soil mass. USDA zone 7 design lows run
+0–10 °F. Wintering it outdoors is workable, but plan protection before you need
+it, and log the low temperature each check so you know what it has actually been
+through. This is flagged in the app too, at the top of the olive's watch list.
 
 ---
 
@@ -148,6 +197,7 @@ pointing at the import page, rather than a confusing empty dashboard.
 index.html          shell and routes
 css/styles.css      theme tokens, light and dark
 js/qrcode.js        self-contained QR encoder (no CDN)
+js/profiles.js      care profiles: tracked factors, target bands, watch lists
 js/store.js         plants, readings, import/export — the only storage code
 js/charts.js        SVG charts, hover and keyboard readout, table views
 js/app.js           routing and views
@@ -189,10 +239,15 @@ picks the smallest version that fits.
 > still decode identically; it just means the data region is compared by
 > decoding rather than by matrix equality.
 
-`smoke_app.py` drives a real Chromium: adds plants, logs checks, renders the
-label sheet, then takes the QR the sheet actually drew, decodes it, and follows
-the decoded URL to confirm it lands on the plant it names — proving the label
-loop end to end rather than just that a QR was drawn. It also round-trips the
-JSON export and checks that re-importing does not duplicate.
+`smoke_app.py` drives a real Chromium across all three profile kinds — indoor
+bench, container bergamot, container olive. It adds plants, logs checks carrying
+every factor, and confirms the profile actually drives the page: the bench tree
+gets seven chart cards and a season program, the olive gets a chill-hours field
+but no humidity or light, and a pH of 7.6 against a 6.0–7.0 band raises a status
+chip rather than being quietly plotted. Then it renders the label sheet, takes
+the QR the sheet actually drew, decodes it, and follows the decoded URL to
+confirm it lands on the plant it names — proving the label loop end to end
+rather than just that a QR was drawn. It also round-trips the JSON export and
+checks that re-importing does not duplicate.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.
