@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bonsai Nursery Tracker</title>
+<meta name="description" content="Track pH, moisture, growth, watering and fertiliser for propagated bonsai, with a scannable QR label per plant.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'&gt;&lt;text y='13' font-size='13'&gt;🌱&lt;/text&gt;&lt;/svg&gt;">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <a class="brand" href="#/">
+    <span class="brand-mark" aria-hidden="true">🌱</span>
+    <span>Bonsai Nursery</span>
+  </a>
+  <nav class="app-nav">
+    <a href="#/" data-nav="list">Nursery</a>
+    <a href="#/labels" data-nav="labels">Labels</a>
+    <a href="#/backup" data-nav="backup">Backup</a>
+    <button type="button" id="scan-button" class="button button-quiet">Scan</button>
+  </nav>
+</header>
+
+<main id="view" class="app-main"></main>
+
+<footer class="app-footer no-print">
+  <p>
+    Readings are stored in this browser only. Use
+    <a href="#/backup">Backup</a> to move a nursery between devices or to open it in Excel.
+  </p>
+</footer>
+
+<!-- In-app scanner, used when the browser exposes the Barcode Detection API.
+     Scanning a label with the phone's own camera app works everywhere and is
+     the primary route; this is a convenience for a device already on the page. -->
+<dialog id="scan-dialog" class="scan-dialog">
+  <div class="scan-dialog-head">
+    <strong>Scan a plant label</strong>
+    <button type="button" class="button button-quiet" data-close-scan>Close</button>
+  </div>
+  <video id="scan-video" playsinline muted></video>
+  <p id="scan-status" class="hint"></p>
+</dialog>
+
+<script src="js/qrcode.js"></script>
+<script src="js/store.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
