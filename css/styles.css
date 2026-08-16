@@ -1,0 +1,442 @@
+/*
+ * Bonsai Nursery Tracker.
+ *
+ * Colour tokens come from a validated chart palette: the five series hues clear
+ * the lightness band, chroma floor, colourblind separation and normal-vision
+ * floor in both light and dark mode. Aqua sits below 3:1 on the light surface,
+ * which is why every chart also ships a direct end label and a table view.
+ */
+
+:root {
+  color-scheme: light;
+
+  --page:            #f9f9f7;
+  --surface-1:       #fcfcfb;
+  --text-primary:    #0b0b0b;
+  --text-secondary:  #52514e;
+  --text-muted:      #898781;
+  --grid:            #e1e0d9;
+  --axis:            #c3c2b7;
+  --border:          rgba(11, 11, 11, 0.10);
+  --wash:            rgba(11, 11, 11, 0.04);
+  --success-text:    #006300;
+  --critical:        #d03b3b;
+
+  --series-ph:        #2a78d6;  /* categorical slot 1 */
+  --series-moisture:  #1baf7a;  /* slot 3 */
+  --series-growth:    #eb6834;  /* slot 2 */
+  --series-water:     #4a3aa7;  /* slot 7 */
+  --series-fert:      #008300;  /* slot 6 */
+
+  --radius: 10px;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+
+    --page:            #0d0d0d;
+    --surface-1:       #1a1a19;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --grid:            #2c2c2a;
+    --axis:            #383835;
+    --border:          rgba(255, 255, 255, 0.10);
+    --wash:            rgba(255, 255, 255, 0.06);
+    --success-text:    #0ca30c;
+    --critical:        #e66767;
+
+    --series-ph:        #3987e5;
+    --series-moisture:  #199e70;
+    --series-growth:    #d95926;
+    --series-water:     #9085e9;
+    --series-fert:      #008300;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+a { color: inherit; }
+
+h1, h2, h3 { line-height: 1.25; margin: 0; font-weight: 600; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.1rem; }
+h3 { font-size: 0.95rem; }
+
+p { margin: 0; }
+
+.hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------- chrome */
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.brand-mark { font-size: 1.2rem; }
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.app-nav a {
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+.app-nav a:hover { background: var(--wash); }
+.app-nav a[aria-current="page"] {
+  background: var(--wash);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.app-main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  display: grid;
+  gap: 20px;
+}
+
+.app-footer {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.page-head { display: grid; gap: 6px; }
+.page-head .hint { max-width: 70ch; }
+
+/* ------------------------------------------------------------ controls */
+
+.button {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.button:hover { background: var(--wash); }
+.button-primary {
+  background: var(--text-primary);
+  color: var(--surface-1);
+  border-color: var(--text-primary);
+  font-weight: 600;
+}
+.button-primary:hover { opacity: 0.88; background: var(--text-primary); }
+.button-quiet { background: transparent; }
+.button-danger { color: var(--critical); }
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--text-secondary); }
+
+input, select, textarea {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+  width: 100%;
+}
+textarea { resize: vertical; min-height: 60px; }
+
+input[type="checkbox"] { width: auto; }
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.field-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+/* --------------------------------------------------------------- cards */
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ----------------------------------------------------------- stat tiles */
+
+.kpi-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.stat-tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The colour key sits beside the label; the number itself stays in ink. */
+.stat-key {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  /* Proportional figures: tabular-nums makes a standalone number look loose. */
+}
+.stat-value .unit {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 2px;
+}
+.stat-sub { font-size: 0.78rem; color: var(--text-muted); }
+
+/* --------------------------------------------------------------- charts */
+
+.chart-grid-cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.chart-holder { position: relative; }
+
+.chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-svg:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+
+.chart-grid { stroke: var(--grid); stroke-width: 1; }
+.chart-crosshair { stroke: var(--axis); stroke-width: 1; pointer-events: none; }
+.chart-hover-dot { stroke: var(--surface-1); stroke-width: 2; pointer-events: none; }
+
+.chart-axis-text {
+  fill: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-end-label {
+  fill: var(--text-primary);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chart-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  white-space: nowrap;
+  z-index: 2;
+}
+.chart-tooltip-row { display: flex; align-items: center; gap: 6px; }
+.chart-tooltip-key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+.chart-tooltip-label { color: var(--text-secondary); }
+
+.legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* --------------------------------------------------------------- tables */
+
+.table-wrap { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+th, td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+th { color: var(--text-secondary); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.plant-row-link { font-weight: 600; text-decoration: none; }
+.plant-row-link:hover { text-decoration: underline; }
+
+details.table-view { font-size: 0.85rem; }
+details.table-view summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  padding: 4px 0;
+}
+
+/* --------------------------------------------------------------- labels */
+
+.label-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.label-cell {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+  background: #ffffff;
+  color: #0b0b0b;
+  break-inside: avoid;
+}
+
+.label-cell svg { width: 100%; max-width: 120px; height: auto; }
+.label-name { font-size: 0.8rem; font-weight: 600; line-height: 1.2; }
+.label-species { font-size: 0.7rem; color: #52514e; font-style: italic; line-height: 1.2; }
+.label-id {
+  font-size: 0.68rem;
+  color: #52514e;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.qr-large { display: grid; justify-items: center; gap: 8px; }
+.qr-large svg {
+  width: 160px;
+  height: 160px;
+  background: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------- dialog */
+
+.scan-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  padding: 16px;
+  max-width: 420px;
+  width: calc(100% - 32px);
+}
+.scan-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.scan-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+#scan-video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* ---------------------------------------------------------------- print */
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #ffffff; }
+  .app-main { padding: 0; max-width: none; }
+  .label-sheet { grid-template-columns: repeat(4, 1fr); gap: 6mm; }
+  .label-cell { border: 1px solid #c3c2b7; }
+  .card { border: none; padding: 0; }
+}
