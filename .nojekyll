@@ -1,0 +1,4 @@
+This file tells GitHub Pages to publish the folder exactly as it is,
+skipping Jekyll processing. The tracker is plain static HTML, CSS and JS,
+so there is nothing to build, and Jekyll would otherwise try to interpret
+the README and drop any path beginning with an underscore.
