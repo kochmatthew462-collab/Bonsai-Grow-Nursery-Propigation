@@ -361,6 +361,117 @@ reasoning for each is in the module that implements it.
 
 ---
 
+## Discovery, compliance and statistics
+
+Six modules added for graduate and doctoral work, each answering a request in the
+extended specification.
+
+### PICO(T) and SPIDER, translated per database
+
+A question written as prose retrieves prose. Framed as PICO it decomposes into
+concept blocks — OR-ed inside, AND-ed between — and that is the search a
+systematic review can defend.
+
+The translation is **per database, because the syntax genuinely differs**:
+
+| | PubMed | CINAHL | Cochrane | Scopus |
+|---|---|---|---|---|
+| Controlled vocabulary | `"term"[Mesh]` | `(MH "Term")` | `[mh term]` | none |
+| Title/abstract | `[tiab]` | `TI x OR AB x` | `:ti,ab,kw` | `TITLE-ABS-KEY()` |
+
+That table is the whole point. **CINAHL has no `[tiab]` field at all**, so a PubMed
+string pasted into it returns almost nothing and the failure is silent. Six
+translators, each checked in the tests for the tags it must emit *and* the ones it
+must not.
+
+Expansion is **opt-in per block** and comes from a small built-in thesaurus of
+nursing concepts. It will not invent synonyms: a generated term you cannot source
+is a liability in a methods section. SPIDER sits alongside PICO because forcing a
+qualitative question into PICO leaves an empty comparison block and misses the
+phenomenological literature.
+
+### PRISMA 2020 flow diagram
+
+Drawn with matplotlib from your counts, in the layout the 2020 statement
+describes — not reproduced from the PRISMA group's template files, which are their
+work. The reporting structure is the method and is freely usable; the artwork is
+not.
+
+Both columns are drawn: PRISMA 2020 separates records from databases and registers
+from those found by citation searching, and a 2009-style single-column diagram is a
+reviewer comment today.
+
+**The arithmetic is walked the way a reader walks it** — identified minus removals
+equals screened, screened minus excluded equals sought, and so on down. A mismatch
+is **reported, never corrected**: silently adjusting the numbers to make the boxes
+subtract would be fabricating a flow diagram, which is a research-integrity problem
+rather than a formatting one. It also insists on full-text exclusion reasons with
+counts, and catches the swapped studies/reports boxes.
+
+### Statistical narrative translation
+
+Paste SPSS or R output, get APA 7 results prose. The value is the dozen rules that
+are individually trivial and collectively impossible at 2 a.m.:
+
+- no leading zero on *p*, *r*, β, ηp² — **but a leading zero on *M*, *SD*, *t*, *F*, *d***, and getting that set wrong is how `M = .45` reaches a marker;
+- `p < .001` rather than SPSS's `p = .000`, which is not small, it is false;
+- degrees of freedom in parentheses, exact *p* rather than `p < .05`;
+- italic Roman symbols, **upright Greek** — the rule people get backwards immediately after learning the first half.
+
+Three things it refuses to do. It will not compute anything. It will not soften a
+non-significant result into "approached significance" — the prose checker flags
+that phrase, along with "proves". And **a missing *p* never renders as "not
+statistically significant"**: the first version did exactly that, manufacturing a
+confident wrong claim out of an absence, and a test now pins it.
+
+SPSS output is column-oriented, so the ANOVA reader locates the "Between Groups"
+row by its label and reads it positionally — there is no `F = ` anywhere in a real
+SPSS table.
+
+### Rubric and syllabus ingestion
+
+Paste a rubric; get a checklist. The distinction that makes it work is between
+**countable requirements** ("at least five peer-reviewed sources from the last five
+years", "1,500–2,000 words", "a Level 1 heading per section") and **qualitative
+criteria** ("demonstrates critical analysis"). Both are extracted; only the first
+is checked. A tool that ticked a judgement would be inventing a grade.
+
+Every requirement carries the rubric's own sentence, so anything misread is visible.
+Real rubrics are wrapped text, and the extractor rejoins continuation lines — a bug
+found by testing, where "published within the / last 5 years" lost its recency
+requirement to a line break.
+
+### The grading simulator
+
+Runs on every preview against the claim ledger. Three states — met, not met,
+cannot check — with the observed value beside each, so you can see *why* something
+passed and catch a check that passed for the wrong reason.
+
+**There is no predicted grade, deliberately.** A paper can meet every countable
+requirement and fail on the qualitative ones, which carry most of the marks; a
+number saying 94% on such a paper would stop you working on the part that mattered.
+Word counts exclude the title page and reference list, because that is what a rubric
+means. A section mentioned in the body but not as a heading is reported as *partly*
+met, not met — a rubric asking for a section means a heading a marker can find.
+
+### Journal guideline parser
+
+Eight built-in profiles (JAN, IJNS, JCN, Nursing Research, Worldviews, BMJ Open,
+The Lancet, AJN) plus a parser for anything else.
+
+The structured abstract is the part that bites: JAN wants *Aim / Design / Methods /
+Results / Conclusion / Impact / Reporting Method / Patient or Public Contribution*,
+and an abstract missing one is returned without review. The checker names exactly
+which headings are absent. It also flags the journals that want Vancouver rather
+than APA and warns that the conversion changes in-text citations, not just the
+reference list — that is not formatting, it is a day of work.
+
+Profiles carry their compile date and a "verify against the current guidelines"
+note, because journals change these without announcement and a stale profile
+trusted as current is worse than none.
+
+---
+
 ## The two documents
 
 **The paper** (`*-paper.docx`) is a real APA 7 manuscript: 1-inch margins,
@@ -673,11 +784,19 @@ app/
     audit_document.py  the companion rationale and mapping document
     deck.py          APA-conventional slides
     figures.py       validated-palette figures, forest plots
+    prisma.py        the PRISMA 2020 flow diagram, drawn and arithmetic-checked
   writing/
     draft.py         claim-ledger drafting, AI-use disclosure
     style.py         stylometric profiling from your own samples
     integrity.py     verbatim overlap, citation audit, export blockers
     proof.py         LanguageTool integration, the Grammarly answer
+    statistics.py    SPSS and R output into APA 7 results prose
+  research/
+    pico.py          PICO(T)/SPIDER builders, six database translators
+  compliance/
+    rubric.py        rubric and syllabus into a checkable requirement list
+    simulator.py     the draft against those requirements — no score, ever
+    journals.py      eight journal profiles plus a guidelines parser
   charting/
     disclosure.py    not-the-record, no-PHI — read this one first
     models.py        Encounter, Entry, hash-chained audit, append-only revisions
@@ -694,7 +813,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               2,845 checks, all offline
+tests/               3,111 checks, all offline
 ```
 
 ## Tests
@@ -716,6 +835,7 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,447 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
+| `test_research_tools.py` | 266 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say |
 | `test_frontend.py` | 60 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_charting_flow.py` | 250 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |

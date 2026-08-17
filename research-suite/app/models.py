@@ -509,6 +509,18 @@ class Project:
 
     searches: list[dict[str, Any]] = field(default_factory=list)
     excluded_notes: list[dict[str, str]] = field(default_factory=list)
+
+    # Free-form structured attachments that are not part of the paper itself:
+    # the framed question and its search strategy, the extracted rubric, the
+    # journal profile. Kept as one dict rather than as three typed fields because
+    # each is produced by a module that owns its own shape, and pinning those
+    # shapes here would mean editing the core model every time one of them gains
+    # a field.
+    notes: dict[str, Any] = field(default_factory=dict)
+    abstract: str = ""
+    keywords: list[str] = field(default_factory=list)
+    font: str = ""
+
     created_at: str = ""
     updated_at: str = ""
 

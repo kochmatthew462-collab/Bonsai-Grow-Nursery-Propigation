@@ -145,12 +145,14 @@ function render() {
   host.replaceChildren();
   const views = {
     projects: viewProjects,
+    question: viewQuestion,
     sources: viewSources,
     screen: viewScreen,
     appraise: viewAppraise,
     write: viewWrite,
     check: viewCheck,
     export: viewExport,
+    compliance: viewCompliance,
     settings: viewSettings,
   };
   host.append((views[state.view] || viewProjects)());
@@ -708,7 +710,8 @@ function viewWrite() {
           render();
         }),
       }, 'Save claims')),
-    el('button', { class: 'button', onclick: () => go('check') }, 'Next: check →'));
+    el('button', { class: 'button', onclick: () => go('check') }, 'Next: check →'),
+    statisticsCard());
 }
 
 /* --------------------------------------------------------------------- check */
@@ -892,7 +895,8 @@ function viewExport() {
           }
         }),
       }, 'Export')),
-    card('Files', files));
+    card('Files', files),
+    prismaCard());
 }
 
 /* ------------------------------------------------------------------ settings */
@@ -1033,3 +1037,485 @@ guard(async () => {
   for (const warning of state.config.warnings) toast(warning, true);
   render();
 });
+
+/* ============================================================ question framing */
+
+/*
+ * The PICO(T) / SPIDER builder. Concept blocks in, database-specific Boolean
+ * strings out. The strings are shown rather than run, for every database except
+ * the two the tool can actually query, because a systematic review is appraised
+ * on the string you ran and pasting one you can see is the honest path.
+ */
+const questionState = {
+  framework: 'pico',
+  question_text: '',
+  years: 5,
+  languages: [],
+  humans_only: true,
+  peer_reviewed_only: true,
+  concepts: {},
+  frameworks: null,
+  report: null,
+};
+
+function viewQuestion() {
+  const section = el('section', { class: 'stack' }, el('h1', {}, 'Frame the question'));
+
+  if (!questionState.frameworks) {
+    guard(async () => {
+      const data = await api('/api/frameworks');
+      questionState.frameworks = data.frameworks;
+      render();
+    });
+    return el('section', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
+  }
+
+  const framework = questionState.frameworks.find(
+    (f) => f.key === questionState.framework) || questionState.frameworks[0];
+
+  const picker = el('select', {
+    onchange: (event) => {
+      questionState.framework = event.target.value;
+      questionState.concepts = {};
+      questionState.report = null;
+      render();
+    },
+  }, questionState.frameworks.map((f) =>
+    el('option', { value: f.key, selected: f.key === questionState.framework },
+      f.label)));
+
+  const questionText = el('input', {
+    type: 'text',
+    placeholder: 'Does hourly nurse rounding reduce inpatient falls in adult acute care?',
+    oninput: (event) => { questionState.question_text = event.target.value; },
+  });
+  questionText.value = questionState.question_text;
+
+  const years = el('input', {
+    type: 'number', min: 1, max: 50,
+    oninput: (event) => {
+      questionState.years = event.target.value ? Number(event.target.value) : null;
+    },
+  });
+  years.value = questionState.years || '';
+
+  const output = el('div', {});
+
+  const build = () => guard(async () => {
+    const payload = {
+      framework: questionState.framework,
+      question_text: questionState.question_text,
+      years: questionState.years,
+      languages: questionState.languages,
+      humans_only: questionState.humans_only,
+      peer_reviewed_only: questionState.peer_reviewed_only,
+      concepts: questionState.concepts,
+    };
+    const report = await post('/api/pico/translate', payload);
+    questionState.report = report;
+    output.replaceChildren(questionReport(report));
+  });
+
+  section.append(
+    card('Framework',
+      el('p', { class: 'hint' }, framework.use_when),
+      el('div', { class: 'grid-fields' },
+        field('Framework', picker),
+        field('Publication window', years, 'years; leave blank for none')),
+      field('Question in prose', questionText,
+        'Optional. It goes into the methods section alongside the concept table.')),
+  );
+
+  for (const slot of framework.slots) {
+    const stored = questionState.concepts[slot.key]
+      || (questionState.concepts[slot.key] = { terms: [], mesh: [], expand: false });
+
+    const terms = el('textarea', {
+      rows: 2,
+      placeholder: 'one term per line, or comma separated',
+      oninput: (event) => {
+        stored.terms = event.target.value
+          .split(/[,\n;]/).map((s) => s.trim()).filter(Boolean);
+      },
+    });
+    terms.value = (stored.terms || []).join('\n');
+
+    const expand = el('input', { type: 'checkbox' });
+    expand.checked = !!stored.expand;
+    expand.addEventListener('change', () => {
+      stored.expand = expand.checked;
+    });
+
+    section.append(card(slot.label + (slot.required ? ' *' : ''),
+      el('p', { class: 'hint' }, slot.guidance),
+      field('Terms', terms),
+      el('label', { class: 'inline-check' }, expand,
+        ' Expand with synonyms and MeSH headings from the built-in thesaurus'),
+      el('button', {
+        class: 'button button-quiet button-small',
+        onclick: () => guard(async () => {
+          if (!(stored.terms || []).length) {
+            toast('Enter a term first.'); return;
+          }
+          const found = await post('/api/pico/expand', { term: stored.terms[0] });
+          if (!found.synonyms.length && !found.mesh.length) {
+            toast('Nothing in the thesaurus for that term — add synonyms yourself.');
+            return;
+          }
+          toast(`Synonyms: ${found.synonyms.join(', ') || 'none'}. `
+            + `MeSH: ${found.mesh.join(', ') || 'none'}.`);
+        }),
+      }, 'Preview expansion for the first term')));
+  }
+
+  section.append(
+    el('div', { class: 'row-actions' },
+      el('button', { class: 'button', onclick: build }, 'Build search strings'),
+      el('button', {
+        class: 'button button-quiet',
+        onclick: () => guard(async () => {
+          if (!state.project) { toast('Open a project first.', true); return; }
+          const payload = {
+            framework: questionState.framework,
+            question_text: questionState.question_text,
+            years: questionState.years,
+            concepts: questionState.concepts,
+          };
+          await post(`/api/projects/${state.project.project_id}/question`, payload);
+          toast('Saved to the project. The audit document reports it as the '
+            + 'search strategy — PRISMA item 7 asks for exactly this.');
+        }),
+      }, 'Save to the project')),
+    output);
+
+  if (questionState.report) output.replaceChildren(questionReport(questionState.report));
+  return section;
+}
+
+function questionReport(report) {
+  const children = [];
+  if (report.missing_required.length) {
+    children.push(notice('Still needed: ' + report.missing_required.join(', ')
+      + '. The strings below are built from what is filled in.', 'warn'));
+  }
+  children.push(notice(report.reporting_note, 'good'));
+
+  for (const row of report.queries) {
+    const box = el('pre', { class: 'macro-output' }, row.query || '(nothing yet)');
+    children.push(el('div', { class: 'subcard' },
+      el('h3', {}, row.label),
+      el('p', { class: 'hint' }, row.how_to_run),
+      ...row.caveats.map((c) => notice(c, 'warn')),
+      box,
+      el('button', {
+        class: 'button button-quiet button-small',
+        onclick: () => navigator.clipboard.writeText(row.query).then(
+          () => toast('Copied.'), () => toast('Could not copy.', true)),
+      }, 'Copy')));
+  }
+  return card('Search strings', ...children);
+}
+
+/* ================================================================ compliance */
+
+const complianceState = { extracted: null, results: null, journal: '', journals: null };
+
+function viewCompliance() {
+  const section = el('section', { class: 'stack' }, el('h1', {}, 'Compliance'));
+
+  const rubricText = el('textarea', {
+    rows: 8,
+    placeholder: 'Paste your rubric, syllabus or assignment brief here.',
+  });
+
+  section.append(card('Rubric and syllabus',
+    el('p', { class: 'hint' },
+      'Extraction separates requirements a program can verify — counts, dates, '
+      + 'named sections, formatting — from criteria no program can score, like '
+      + '"demonstrates critical analysis". Both are listed; only the first kind '
+      + 'is checked, because a green tick on a judgement would be inventing a '
+      + 'grade.'),
+    field('Rubric text', rubricText),
+    el('div', { class: 'row-actions' },
+      el('button', {
+        class: 'button',
+        onclick: () => guard(async () => {
+          const out = await post('/api/rubric/extract', { text: rubricText.value });
+          complianceState.extracted = out;
+          render();
+        }),
+      }, 'Extract requirements'),
+      complianceState.extracted ? el('button', {
+        class: 'button button-quiet',
+        onclick: () => guard(async () => {
+          if (!state.project) { toast('Open a project first.', true); return; }
+          await post(`/api/projects/${state.project.project_id}/rubric`,
+            { requirements: complianceState.extracted.requirements });
+          toast('Attached. The checks now run against your draft.');
+          const results = await api(
+            `/api/projects/${state.project.project_id}/compliance`);
+          complianceState.results = results;
+          render();
+        }),
+      }, 'Attach to this project') : null)));
+
+  if (complianceState.extracted) {
+    const out = complianceState.extracted;
+    section.append(card('Extracted',
+      notice(out.summary, 'good'),
+      el('p', { class: 'hint' }, out.caveat),
+      el('div', { class: 'list' }, out.requirements.map((r) =>
+        el('div', { class: `claim ${r.checkable ? '' : 'claim-own'}` },
+          el('div', { class: 'claim-meta' },
+            chip(r.checkable ? 'checkable' : 'not scorable',
+              r.checkable ? 'good' : ''),
+            el('span', { class: 'flag-code' }, r.kind_label)),
+          el('div', { class: 'claim-text' }, r.describe),
+          el('p', { class: 'hint' }, '“' + r.source_text + '”'),
+          r.note ? el('p', { class: 'hint' }, r.note) : null)))));
+  }
+
+  const results = el('div', {});
+  if (state.project) {
+    guard(async () => {
+      const out = await api(`/api/projects/${state.project.project_id}/compliance`);
+      results.replaceChildren(complianceResults(out));
+    });
+  }
+  section.append(results);
+
+  section.append(journalCard());
+  return section;
+}
+
+function complianceResults(out) {
+  if (!out.results || !out.results.length) {
+    return card('Checks against your draft',
+      el('p', { class: 'hint' }, out.no_score_note || out.headline));
+  }
+  const icon = { met: 'good', not_met: 'bad', partial: 'warn', cannot_check: '' };
+  return card('Checks against your draft',
+    notice(out.headline, 'good'),
+    el('p', { class: 'hint' }, out.no_score_note),
+    el('div', { class: 'list' }, out.results.map((r) =>
+      el('div', { class: 'claim' },
+        el('div', { class: 'claim-meta' },
+          chip({ met: 'met', not_met: 'not met', partial: 'partly',
+                 cannot_check: 'cannot check' }[r.status], icon[r.status]),
+          el('span', { class: 'row-title' }, r.label)),
+        r.observed ? el('p', { class: 'hint' }, 'In the draft: ' + r.observed) : null,
+        r.gap ? el('p', { class: 'hint' }, 'Gap: ' + r.gap) : null,
+        r.advice ? el('p', { class: 'hint' }, r.advice) : null))));
+}
+
+function journalCard() {
+  const output = el('div', {});
+  const picker = el('select', {}, [el('option', { value: '' }, 'Choose a journal…')]);
+  const guidelines = el('textarea', {
+    rows: 5, placeholder: 'Or paste the author guidelines from any journal.',
+  });
+  const abstractBox = el('textarea', {
+    rows: 5,
+    placeholder: 'Paste your abstract so the structured-heading check can run.',
+  });
+
+  guard(async () => {
+    const data = await api('/api/journals');
+    complianceState.journals = data.journals;
+    for (const journal of data.journals) {
+      picker.append(el('option', { value: journal.key }, journal.name));
+    }
+  });
+
+  return card('Journal submission guidelines',
+    el('p', { class: 'hint' },
+      'A paper in perfect APA 7 is still desk rejected if the journal wants a '
+      + '4,000-word ceiling, a structured abstract with named headings, and a '
+      + 'reporting checklist. Those live in a different document from the style '
+      + 'guide and they are what an editor checks first.'),
+    el('div', { class: 'grid-fields' },
+      field('Journal', picker, 'or paste guidelines below'),
+      field('Abstract', abstractBox)),
+    field('Author guidelines', guidelines),
+    el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        if (!state.project) { toast('Open a project first.', true); return; }
+        const out = await post(
+          `/api/projects/${state.project.project_id}/journal-check`,
+          { journal: picker.value, guidelines: guidelines.value,
+            abstract: abstractBox.value });
+        output.replaceChildren(
+          notice(out.headline, 'good'),
+          out.notes ? notice(out.notes, 'warn') : null,
+          el('p', { class: 'hint' }, out.verify),
+          el('div', { class: 'list' }, out.findings.map((f) =>
+            el('div', { class: 'claim' },
+              el('div', { class: 'claim-meta' },
+                chip({ met: 'met', not_met: 'not met',
+                       cannot_check: 'confirm yourself' }[f.status],
+                  { met: 'good', not_met: 'bad', cannot_check: '' }[f.status]),
+                el('span', { class: 'row-title' }, f.label)),
+              el('p', { class: 'hint' }, `${f.observed} — required: ${f.expected}`),
+              f.advice ? el('p', { class: 'hint' }, f.advice) : null))));
+      }),
+    }, 'Check against the journal'),
+    output);
+}
+
+/* ================================================================= statistics */
+
+function statisticsCard() {
+  const output = el('div', {});
+  const input = el('textarea', {
+    rows: 6,
+    placeholder: 'Paste an SPSS table or R output block, including its header line.',
+  });
+  const variables = el('input', {
+    type: 'text', placeholder: 'fall rates between the two units',
+  });
+
+  return card('Statistical narrative',
+    el('p', { class: 'hint' },
+      'Paste SPSS or R output and get APA 7 results prose. The value is not the '
+      + 'typing — it is the dozen statistical-style rules that are individually '
+      + 'trivial and collectively impossible at 2 a.m.: no leading zero on p and '
+      + 'r but a leading zero on M and t, exact p rather than a threshold, '
+      + 'p < .001 rather than SPSS’s impossible p = .000, italic Roman '
+      + 'symbols but upright Greek.'),
+    field('Output', input),
+    field('What was compared', variables, 'goes into the sentence'),
+    el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        const out = await post('/api/statistics/translate',
+          { text: input.value, variables: variables.value });
+        const children = [];
+        if (!out.results.length) children.push(notice(out.note, 'warn'));
+        else children.push(notice(out.note, 'good'));
+        for (const result of out.results) {
+          children.push(el('div', { class: 'subcard' },
+            el('h3', {}, result.label || result.kind),
+            el('pre', { class: 'macro-output' }, result.sentence),
+            result.note ? el('p', { class: 'hint' }, result.note) : null,
+            result.confidence === 'ambiguous'
+              ? notice('The parser could not fully identify this table. Check '
+                + 'every number against your output — and on an SPSS '
+                + 'independent-samples table there are two rows, and only one '
+                + 'of them is yours.', 'warn')
+              : null,
+            el('button', {
+              class: 'button button-quiet button-small',
+              onclick: () => navigator.clipboard.writeText(result.sentence).then(
+                () => toast('Copied.'), () => toast('Could not copy.', true)),
+            }, 'Copy')));
+        }
+        for (const issue of out.issues) {
+          children.push(el('div', { class: 'flag flag-warn' },
+            el('p', { class: 'flag-message' }, issue.message),
+            issue.excerpt
+              ? el('p', { class: 'flag-excerpt' }, issue.excerpt) : null,
+            el('p', { class: 'flag-suggestion' }, issue.suggestion)));
+        }
+        output.replaceChildren(...children);
+      }),
+    }, 'Translate to APA'),
+    output);
+}
+
+/* ===================================================================== PRISMA */
+
+const PRISMA_FIELDS = [
+  ['records_databases', 'Records identified — databases'],
+  ['records_registers', 'Records identified — registers'],
+  ['duplicates_removed', 'Duplicates removed'],
+  ['removed_ineligible_automation', 'Removed by automation tools'],
+  ['removed_other_reasons', 'Removed for other reasons'],
+  ['records_screened', 'Records screened'],
+  ['records_excluded', 'Records excluded at title and abstract'],
+  ['reports_sought', 'Reports sought for retrieval'],
+  ['reports_not_retrieved', 'Reports not retrieved'],
+  ['reports_assessed', 'Reports assessed for eligibility'],
+  ['records_websites', 'Other methods — websites'],
+  ['records_organisations', 'Other methods — organisations'],
+  ['records_citation_searching', 'Other methods — citation searching'],
+  ['other_reports_sought', 'Other methods — reports sought'],
+  ['other_reports_not_retrieved', 'Other methods — not retrieved'],
+  ['other_reports_assessed', 'Other methods — assessed'],
+  ['studies_included', 'Studies included in review'],
+  ['reports_of_included', 'Reports of included studies'],
+];
+
+function prismaCard() {
+  const values = {};
+  const reasons = el('textarea', {
+    rows: 3,
+    placeholder: 'Wrong population: 61\nWrong outcome: 44\nNot primary research: 29',
+  });
+  const output = el('div', {});
+
+  const inputs = PRISMA_FIELDS.map(([key, label]) => {
+    const input = el('input', {
+      type: 'number', min: 0,
+      oninput: (event) => { values[key] = event.target.value; },
+    });
+    return field(label, input);
+  });
+
+  return card('PRISMA 2020 flow diagram',
+    el('p', { class: 'hint' },
+      'Drawn from your counts in the layout the 2020 statement describes, rather '
+      + 'than reproduced from the PRISMA group’s template files. The '
+      + 'arithmetic is checked the way a reader checks it — identified minus '
+      + 'removed equals screened, and so on down — and a mismatch is reported '
+      + 'rather than corrected, because silently adjusting the numbers would be '
+      + 'fabricating a flow diagram.'),
+    el('div', { class: 'grid-fields' }, inputs),
+    field('Full-text exclusion reasons', reasons,
+      'one per line, as "reason: count". PRISMA 2020 requires these.'),
+    el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        const parsed = {};
+        for (const line of reasons.value.split('\n')) {
+          const match = /^(.+?)\s*[:=]\s*(\d+)\s*$/.exec(line.trim());
+          if (match) parsed[match[1].trim()] = Number(match[2]);
+        }
+        const counts = Object.assign({}, values);
+        if (Object.keys(parsed).length) counts.reports_excluded_reasons = parsed;
+        const out = await post(`/api/projects/${state.project.project_id}/prisma`,
+          { counts });
+        const children = [];
+        if (out.problems.length) {
+          children.push(notice(
+            'The counts do not subtract. Reported rather than corrected — the '
+            + 'numbers below are exactly what you entered.', 'bad'));
+          for (const problem of out.problems) {
+            children.push(el('div', { class: 'flag flag-block' },
+              el('div', { class: 'flag-head' }, chip('check', 'bad'),
+                el('span', { class: 'flag-code' }, problem.check)),
+              el('p', { class: 'flag-message' },
+                `Expected ${problem.expected}, entered ${problem.entered}.`),
+              el('p', { class: 'flag-suggestion' }, problem.explanation)));
+          }
+        } else {
+          children.push(notice('Every subtraction checks out.', 'good'));
+        }
+        if (out.path) {
+          children.push(el('img', {
+            src: `/api/projects/${state.project.project_id}/files/`
+              + encodeURIComponent(out.path)
+              + `?token=${encodeURIComponent(state.token)}`,
+            alt: 'PRISMA 2020 flow diagram',
+            style: 'max-width:100%;border:1px solid var(--border);'
+              + 'border-radius:var(--radius);background:#fff',
+          }));
+        }
+        children.push(el('p', { class: 'hint citation' }, out.citation));
+        children.push(el('p', { class: 'hint' }, out.licensing));
+        children.push(el('p', { class: 'hint' }, 'Figure note: ' + out.figure_note));
+        output.replaceChildren(...children);
+      }),
+    }, 'Validate and draw'),
+    output);
+}

@@ -22,8 +22,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import security, settings as settings_module, storage
-from .apa import assemble, audit_document, deck as deck_module, figures as figures_module
+from .apa import assemble, audit_document, deck as deck_module, figures as figures_module, prisma as prisma_module
 from .charting import routes as charting_routes, store as charting_store
+from .compliance import journals as journals_module, rubric as rubric_module, \
+    simulator as simulator_module
+from .research import pico as pico_module
 from .apa.citations import CitationContext
 from .apa.document import ApaPaper, APPROVED_FONTS, default_running_head
 from .evidence import appraisal as appraisal_module, dedupe, levels
@@ -33,7 +36,10 @@ from .models import (
 )
 from .sources import gov, importers, scholarly  # noqa: F401  (registers sources)
 from .sources.base import REGISTRY, Fetcher
-from .writing import draft as draft_module, integrity, style as style_module
+from .writing import (
+    draft as draft_module, integrity, statistics as statistics_module,
+    style as style_module,
+)
 
 SETTINGS = settings_module.load()
 STORE = storage.ProjectStore(SETTINGS.data_dir / "projects")
@@ -644,6 +650,182 @@ async def level_figure(project_id: str) -> dict[str, Any]:
         counts, path=out / "figure-levels.png")
     return {"path": Path(figure.path).name, "note": figure.note,
             "table": {"headers": figure.data_table[0], "rows": figure.data_table[1]}}
+
+
+
+# ------------------------------------------------- question framing and search
+
+
+@app.get("/api/frameworks")
+async def frameworks() -> dict[str, Any]:
+    """PICO(T) and SPIDER slots, with the guidance for each."""
+    return {"frameworks": pico_module.frameworks()}
+
+
+@app.post("/api/pico/expand")
+async def expand_term(term: str = Body(..., embed=True)) -> dict[str, Any]:
+    """Synonyms and MeSH headings for one concept term."""
+    found = pico_module.expand(term)
+    return {
+        "term": term,
+        **found,
+        "note": ("Expansions come from a small built-in thesaurus of nursing and "
+                 "health-services concepts. Anything not covered is yours to add "
+                 "— a generated synonym you cannot source is a liability in a "
+                 "methods section."),
+    }
+
+
+@app.post("/api/pico/translate")
+async def translate_question(payload: dict = Body(...)) -> dict[str, Any]:
+    """Turn a framed question into a search string for every database."""
+    question = pico_module.build(payload)
+    return pico_module.strategy_report(question)
+
+
+@app.post("/api/projects/{project_id}/question")
+async def save_question(project_id: str,
+                        payload: dict = Body(...)) -> dict[str, Any]:
+    """Store the framed question on the project so the audit document can report
+    the search strategy — PRISMA item 7 asks for it and it cannot be
+    reconstructed after the fact."""
+    project = _load(project_id)
+    question = pico_module.build(payload)
+    project.notes = getattr(project, "notes", {}) or {}
+    if not isinstance(project.notes, dict):
+        project.notes = {}
+    project.notes["question"] = pico_module.strategy_report(question)
+    STORE.save(project)
+    return {"project": _project_payload(project),
+            "strategy": project.notes["question"]}
+
+
+# ------------------------------------------------------------------- PRISMA
+
+
+@app.post("/api/projects/{project_id}/prisma")
+async def prisma_diagram(project_id: str,
+                         payload: dict = Body(default_factory=dict)) -> dict[str, Any]:
+    """Validate the counts and draw the 2020 flow diagram."""
+    project = _load(project_id)
+    counts = prisma_module.from_project(project, payload.get("counts") or {})
+    result = prisma_module.payload(counts)
+    if payload.get("render", True):
+        out = SETTINGS.export_dir / project.project_id
+        path = prisma_module.render(
+            counts, out / "figure-prisma.png",
+            title=str(payload.get("title", "") or ""))
+        result["path"] = path.name
+    return result
+
+
+# --------------------------------------------------- statistics translation
+
+
+@app.post("/api/statistics/translate")
+async def translate_statistics(text: str = Body(""),
+                               variables: str = Body(""),
+                               direction: str = Body("")) -> dict[str, Any]:
+    """SPSS or R output into APA 7 results prose."""
+    return statistics_module.translate(text, variables=variables,
+                                       direction=direction)
+
+
+@app.post("/api/statistics/manual")
+async def manual_statistics(kind: str = Body(...),
+                            values: dict = Body(default_factory=dict),
+                            variables: str = Body(""),
+                            direction: str = Body("")) -> dict[str, Any]:
+    """Render from values entered by hand, for output the parser cannot read."""
+    return statistics_module.manual(kind, values, variables=variables,
+                                    direction=direction)
+
+
+@app.get("/api/statistics/supported")
+async def supported_statistics() -> dict[str, Any]:
+    return {"tests": statistics_module.supported()}
+
+
+# ------------------------------------------------------------- the rubric
+
+
+@app.post("/api/rubric/extract")
+async def extract_rubric(text: str = Body(""),
+                         source_name: str = Body("")) -> dict[str, Any]:
+    """Pull checkable requirements out of a rubric or syllabus."""
+    return rubric_module.extract(text, source_name=source_name)
+
+
+@app.post("/api/projects/{project_id}/rubric")
+async def save_rubric(project_id: str,
+                      payload: dict = Body(...)) -> dict[str, Any]:
+    """Attach an extracted rubric to the project so the simulator can run."""
+    project = _load(project_id)
+    if not isinstance(getattr(project, "notes", None), dict):
+        project.notes = {}
+    project.notes["rubric"] = {
+        "source_name": str(payload.get("source_name", "") or ""),
+        "requirements": payload.get("requirements") or [],
+    }
+    STORE.save(project)
+    return {"project": _project_payload(project),
+            "rubric": project.notes["rubric"]}
+
+
+@app.get("/api/projects/{project_id}/compliance")
+async def compliance(project_id: str) -> dict[str, Any]:
+    """Check the current draft against the attached rubric."""
+    project = _load(project_id)
+    stored = (getattr(project, "notes", None) or {}).get("rubric") or {}
+    requirements = stored.get("requirements") or []
+    facts = simulator_module.facts_from_project(project)
+    if not requirements:
+        return {
+            "results": [], "counts": {}, "headline": "No rubric attached.",
+            "outstanding": [], "unscored": [],
+            "no_score_note": ("Paste your rubric or assignment brief on the "
+                              "Compliance screen and the checks appear here."),
+        }
+    return simulator_module.run(requirements, facts)
+
+
+# ---------------------------------------------------------- journal guidelines
+
+
+@app.get("/api/journals")
+async def journal_catalogue() -> dict[str, Any]:
+    return {"journals": journals_module.catalogue(),
+            "verify": journals_module.VERIFY_NOTE}
+
+
+@app.post("/api/journals/parse")
+async def parse_journal(text: str = Body(""),
+                        name: str = Body("")) -> dict[str, Any]:
+    """Read pasted author guidelines into a profile."""
+    return journals_module.parse(text, name=name).as_dict()
+
+
+@app.post("/api/projects/{project_id}/journal-check")
+async def journal_check(project_id: str,
+                        journal: str = Body(""),
+                        guidelines: str = Body(""),
+                        abstract: str = Body("")) -> dict[str, Any]:
+    """Compare the manuscript against a journal profile."""
+    project = _load(project_id)
+    profile = (journals_module.get(journal) if journal
+               else journals_module.parse(guidelines, name="Pasted guidelines"))
+    if profile is None:
+        raise HTTPException(404, f"no journal profile {journal!r}")
+    facts = simulator_module.facts_from_project(project)
+    title_page = getattr(project, "title_page", None)
+    return journals_module.check(
+        profile,
+        body_words=facts.body_words,
+        abstract=abstract or str(getattr(project, "abstract", "") or ""),
+        reference_count=facts.source_count,
+        title=str(getattr(title_page, "title", "") or "") if title_page else "",
+        keywords=list(getattr(project, "keywords", None) or []),
+    )
 
 
 # ------------------------------------------------------------------- helpers
