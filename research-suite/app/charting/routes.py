@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse
 
 from . import (
     disclosure, export as export_module, interlocks, language, narrative, phi,
-    scales, specialty, store as store_module, systems,
+    proofing, scales, specialty, store as store_module, systems,
 )
 from .models import (
     Encounter, Entry, EntryKind, Intervention, Medication, ProviderNotification,
@@ -108,6 +108,7 @@ async def reference() -> dict[str, Any]:
             for key, _, minutes, what in interlocks.LOOP_RULES
         ],
         "phi": phi.report(),
+        "proofing": proofing.status(),
         "non_overridable": sorted(interlocks.NON_OVERRIDABLE),
     }
 
@@ -500,6 +501,23 @@ async def language_check(text: str = Body(...),
         "blocked": bool(language.blocking(flags)),
         "words": len(text.split()),
     }
+
+
+@router.post("/proof")
+async def proof(text: str = Body(...),
+                field_path: str = Body(""),
+                url: str = Body("")) -> dict[str, Any]:
+    """Spelling and grammar for the note text.
+
+    Separate from `/language-check` on purpose. The objective-language filter is
+    local, instant, and the one that matters; this needs a LanguageTool server and
+    is the polish pass. Keeping them apart means a missing server degrades the
+    polish and nothing else.
+    """
+    result = await proofing.check_note(text, url=url, field_path=field_path)
+    payload = result.as_dict()
+    payload["status"] = proofing.status(url)
+    return payload
 
 
 @router.post("/phi-redact")

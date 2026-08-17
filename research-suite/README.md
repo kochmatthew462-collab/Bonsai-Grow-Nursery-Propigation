@@ -193,6 +193,43 @@ are found first and every rule skips what is inside them, and the filter activel
 | Dosing notation | "1.0 mg", ".5 mg", "10 U", "q.d.", "MS", "cc", "@" | The Joint Commission and ISMP do-not-use lists — the notations with documented death and injury cases behind them. |
 | Liability / privacy | fault, blame, another patient, incident reports | Hard blocks. See below. |
 
+### Spelling and grammar
+
+You asked for the tab to "grammar/spell check properly". A general-purpose checker
+pointed at a nursing note does not do that — it produces so much noise it gets
+switched off within one shift, and a checker that is switched off catches nothing.
+Three things are wrong with the naive version, and each is handled:
+
+- **Nursing notes are deliberately fragmentary.** "Alert and oriented ×4." "Denies
+  chest pain." "Bed low, brakes locked, call light within reach." All fragments,
+  all correct charting. 17 rules are disabled, each with a stated reason.
+- **Clinical vocabulary is not in a general dictionary.** PERRLA, hydromorphone,
+  nasogastric, levophed, periwound — a spell-checker calls every one a mistake.
+  Spelling hits are filtered against a ~1,750-term clinical dictionary that is
+  **derived from this tab's own vocabulary** (every option label in `systems.py`,
+  every scale item in `scales.py`, every drug in the closed-loop rules) plus a
+  curated medication and abbreviation list. Deriving it means the checker can never
+  start flagging words the tool itself put in the note.
+- **Clinical notation looks like broken text.** `BP 84/50`, `SpO2 88%`,
+  `0.5 mg/kg`, `1412`, `GCS 15 (E4 V5 M6)`, `2+`, `5/5`, `3.2 cm × 1.8 cm`. All
+  masked at **equal length** before the request goes out — equal length because
+  offsets come back as indexes into what was sent, so a substitution that changed
+  the length would misplace every later issue.
+
+Two smaller behaviours that matter: dictionary suppression applies to **spelling**
+hits only, because a grammar rule flagging "are" is not claiming "are" is
+misspelled; and a suggested correction that is itself a clinical term is dropped,
+because offering "insulin" as the fix for a misspelling of something else is worse
+than offering nothing.
+
+It runs against the same self-hosted LanguageTool server as the research half, so
+nothing leaves the machine, and it is **optional** — with no server the tab still
+composes, still runs the objective-language filter, still enforces every interlock
+and still exports, and it says so rather than silently skipping.
+
+It is also not the important checker here, and the UI says that too. A misspelling
+is embarrassing; "patient appears sleeping" is a lawsuit.
+
 ### The interlocks
 
 Six blocks, and no more. An interlock that fires on a routine note teaches the
@@ -648,6 +685,7 @@ app/
     systems.py       8 body systems, 57 elements, WDL definitions
     language.py      the objective-language filter, quote exemption
     phi.py           identifier detection and redaction
+    proofing.py      spelling and grammar, tuned and masked for clinical notes
     interlocks.py    the six blocks, chain of command, closed loops
     narrative.py     SBAR-SOAP composer, six macros, four handoff routes
     specialty.py     ER / ICU / peds / med-surg modules, timed bundles
@@ -656,7 +694,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               2,663 checks, all offline
+tests/               2,785 checks, all offline
 ```
 
 ## Tests
@@ -678,6 +716,7 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,447 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
+| `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_charting_flow.py` | 250 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
 
 ---

@@ -740,6 +740,8 @@ function viewNote() {
           },
         }, 'Copy for the EHR'))),
 
+    proofCard(),
+
     el('div', { id: 'gate-panel' }, gatePanel()),
 
     el('div', { class: 'sticky-actions' }, saveButton,
@@ -747,6 +749,57 @@ function viewNote() {
         chartState.preview && chartState.preview.gate.blocked
           ? 'Save is disabled by an interlock — see Checks above.'
           : 'The server runs the same checks again on save.')));
+}
+
+/*
+ * Spelling and grammar. On demand rather than on every keystroke, for two reasons:
+ * it needs a LanguageTool server that may not be running, and it is not the check
+ * that matters here — the objective-language filter is, and that one runs
+ * continuously with no server. A missing server degrades this and nothing else.
+ */
+function proofCard() {
+  const output = el('div', {});
+  const status = (chartState.ref && chartState.ref.proofing) || {};
+
+  return card('Spelling and grammar',
+    el('p', { class: 'hint' }, status.summary || ''),
+    el('p', { class: 'hint' }, status.why_tuned || ''),
+    el('div', { class: 'row-actions' },
+      el('button', {
+        class: 'button button-quiet',
+        onclick: () => guard(async () => {
+          const draft = chartState.draft;
+          const text = draft.narrativeEdited
+            ? draft.narrative
+            : ((chartState.preview && chartState.preview.narrative) || '');
+          if (!text.trim()) {
+            toast('Nothing to check yet.');
+            return;
+          }
+          const result = await chartApi('/proof', {
+            text, field_path: 'narrative',
+          });
+          output.replaceChildren();
+          if (!result.available) {
+            output.append(notice(result.note, 'warn'),
+              el('p', { class: 'hint' },
+                'Start one with: ' + (status.start_command || '')));
+            return;
+          }
+          if (!result.flags.length) {
+            output.append(notice(result.note, 'good'));
+            return;
+          }
+          output.append(el('p', { class: 'hint' },
+            `${result.flags.length} issue(s) in ${result.checked_words} words`
+            + (result.suppressed_clinical
+              ? `; ${result.suppressed_clinical} clinical term(s) recognised and `
+                + 'passed over.' : '.')));
+          for (const flag of result.flags) output.append(flagRow(flag));
+        }),
+      }, 'Check spelling and grammar'),
+      el('span', { class: 'hint' }, status.not_the_important_one || '')),
+    output);
 }
 
 function encounterStrip() {
