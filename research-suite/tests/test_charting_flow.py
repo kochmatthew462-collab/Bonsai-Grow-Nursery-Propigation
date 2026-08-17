@@ -961,6 +961,139 @@ def test_disclosure_is_stated_everywhere_it_matters() -> None:
              disclosure.EXPORT_HEADER, "the EHR governs")
 
 
+
+# ================================================ regressions found by audit
+
+
+def test_paediatric_weight_is_a_hard_stop() -> None:
+    """The specification called it a hard stop and it was overridable: any typed
+    reason cleared it. There is no emergency in which the right answer is to
+    document a paediatric dose without the weight it was calculated from."""
+    encounter = blank_encounter(Setting.PEDIATRIC, age_band="4 y")
+    entry = note()
+    entry.medications.append(Medication(name="Paracetamol", given_at=iso(NOW)))
+    gate = interlocks.evaluate(encounter, entry, at=NOW,
+                               override_reason="emergency, will add later")
+    check("still blocked", gate.blocked, True)
+    check("and not overridable", gate.overridable, False)
+    check("listed as non-overridable",
+          "paediatric_weight_required" in interlocks.NON_OVERRIDABLE, True)
+
+
+def test_notification_without_an_outcome_does_not_clear_the_gate() -> None:
+    """The specification asked for time, name, method AND response. Checking only
+    the first three let the "MD aware" note the interlock exists to prevent
+    straight through."""
+    encounter = blank_encounter()
+    entry = note()
+    entry.vitals = Vitals(systolic=84, taken_at=iso(NOW))
+    entry.notifications.append(ProviderNotification(
+        notified_at=iso(NOW), provider_name="Dr. Alvarez", method="paged",
+        reason="a systolic of 84"))
+    check("still blocked", interlocks.evaluate(encounter, entry, at=NOW).blocked,
+          True)
+
+    entry.notifications[0].orders_received = "500 mL bolus"
+    check("orders clear it",
+          interlocks.evaluate(encounter, entry, at=NOW).blocked, False)
+
+    entry.notifications[0].orders_received = ""
+    entry.notifications[0].no_new_orders = True
+    check("an explicit no-orders also clears it",
+          interlocks.evaluate(encounter, entry, at=NOW).blocked, False)
+
+
+def test_copy_forward_is_not_cleared_by_a_timestamp() -> None:
+    """Comparing the rendered vitals sentence meant bumping only "time taken"
+    cleared the duplicate check while every reading stayed identical."""
+    encounter = blank_encounter()
+    first = note(kind=EntryKind.SHIFT_ASSESSMENT)
+    first.narrative = "Patient stable."
+    first.vitals = Vitals(systolic=118, heart_rate=78, taken_at=iso(NOW))
+    encounter.entries.append(first)
+
+    same = note(kind=EntryKind.SHIFT_ASSESSMENT)
+    same.narrative = "Patient stable."
+    same.vitals = Vitals(systolic=118, heart_rate=78,
+                         taken_at=iso(NOW + timedelta(hours=4)))
+    check("a new timestamp alone does not clear it",
+          "copy_forward_unchanged" in blocking_codes(
+              interlocks.evaluate(encounter, same, at=NOW)), True)
+
+    same.vitals.heart_rate = 92
+    check("a changed reading does",
+          "copy_forward_unchanged" in blocking_codes(
+              interlocks.evaluate(encounter, same, at=NOW)), False)
+
+
+def test_no_orders_prompts_escalation_without_a_checkbox() -> None:
+    """Conditioning the prompt on the nurse ticking `no_new_orders` meant the
+    commonest real case — a provider who answered and ordered nothing, on a
+    patient still crossing a threshold — never prompted."""
+    encounter = blank_encounter()
+    entry = note()
+    entry.vitals = Vitals(systolic=84, taken_at=iso(NOW))
+    entry.notifications.append(ProviderNotification(
+        notified_at=iso(NOW), provider_name="Dr. Chen", method="paged",
+        reason="a systolic of 84", response="will review shortly"))
+    check("prompted", "escalation_available" in gate_codes(
+        interlocks.evaluate(encounter, entry, at=NOW)), True)
+
+
+def test_reevaluation_timed_to_the_dose_is_flagged() -> None:
+    encounter = blank_encounter()
+    entry = note()
+    entry.medications.append(Medication(
+        name="Morphine", given_at=iso(NOW), indication="pain",
+        effect="reports 3 of 10",
+        effect_checked_at=iso(NOW + timedelta(minutes=1))))
+    check("flagged", "effect_checked_too_soon" in gate_codes(
+        interlocks.evaluate(encounter, entry, at=NOW)), True)
+
+    entry.medications[0].effect_checked_at = iso(NOW + timedelta(minutes=35))
+    check("a real re-evaluation is not",
+          "effect_checked_too_soon" in gate_codes(
+              interlocks.evaluate(encounter, entry, at=NOW)), False)
+
+
+def test_procedure_notes_have_completeness_rules() -> None:
+    """'Procedure' was only an entry-kind label with no block behind it."""
+    encounter = blank_encounter()
+    entry = note(kind=EntryKind.PROCEDURE)
+    codes = gate_codes(interlocks.evaluate(encounter, entry, at=NOW))
+    check("an empty procedure note is flagged",
+          "procedure_note_without_procedure" in codes, True)
+
+    entry.module_data["procedures"] = [{"name": "Peripheral IV insertion",
+                                        "performed_at": iso(NOW)}]
+    codes = gate_codes(interlocks.evaluate(encounter, entry, at=NOW))
+    for key in ("procedure_missing_consent", "procedure_missing_tolerance",
+                "procedure_missing_post_assessment"):
+        check(f"{key} fires", key in codes, True)
+
+    entry.module_data["procedures"][0].update(
+        consent="Verbal consent obtained",
+        tolerance="Tolerated well, no complaint of pain",
+        post_assessment="Site clean and dry, flushes freely, no swelling")
+    codes = gate_codes(interlocks.evaluate(encounter, entry, at=NOW))
+    check("all cleared",
+          [c for c in codes if c.startswith("procedure_missing")], [])
+
+
+def test_reason_for_the_note_reaches_the_subjective_section() -> None:
+    """The specification put "the reason for this update" in S beside the
+    patient's words, and there was no field for it."""
+    encounter = blank_encounter()
+    entry = note()
+    entry.reason = "Called to the room for new chest tightness"
+    entry.subjective = 'Patient stated, "It feels tight."'
+    text = narrative.compose(entry, encounter)
+    contains("reason present", text, "Reason for this note")
+    contains("and the patient's words", text, "It feels tight")
+    check("reason precedes the quote",
+          text.index("Reason for this note") < text.index("It feels tight"), True)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

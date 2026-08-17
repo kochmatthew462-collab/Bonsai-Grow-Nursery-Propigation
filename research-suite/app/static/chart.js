@@ -59,6 +59,8 @@ function blankDraft(kind) {
     narrativeEdited: false,
     vitals: {},
     systems: {},
+    wounds: [],
+    procedures: [],
     scales: [],
     medications: [],
     interventions: [],
@@ -116,11 +118,13 @@ function draftPayload() {
     narrative: draft.narrativeEdited ? draft.narrative : '',
     vitals: draft.vitals,
     systems,
+    wounds: draft.wounds,
     scales: draft.scales,
     medications: draft.medications,
     interventions: draft.interventions,
     notifications: draft.notifications,
-    module_data: draft.module_data,
+    module_data: Object.assign({}, draft.module_data,
+      draft.procedures.length ? { procedures: draft.procedures } : {}),
     override_reason: draft.override_reason,
     acknowledged_warnings: draft.acknowledged,
   };
@@ -141,6 +145,29 @@ async function refreshPreview() {
     `/encounters/${chartState.encounter.encounter_id}/preview`, draftPayload());
   chartState.preview = result;
   paintGate();
+  paintSaveButton();
+}
+
+/*
+ * The Save button sits outside #gate-panel, so repainting the gate left it in
+ * whatever state the last full render gave it — enabled on a note that had since
+ * become blocked, and disabled on one that had since been fixed. The server
+ * refuses either way, but a button that lies about what will happen is its own
+ * defect.
+ */
+function paintSaveButton() {
+  const button = document.getElementById('save-note');
+  const hint = document.getElementById('save-hint');
+  if (!button) return;
+  const blocked = !!(chartState.preview && chartState.preview.gate
+    && chartState.preview.gate.blocked);
+  button.disabled = blocked;
+  button.classList.toggle('button-blocked', blocked);
+  if (hint) {
+    hint.textContent = blocked
+      ? 'Save is disabled by an interlock — see Checks above.'
+      : 'The server runs the same checks again on save.';
+  }
 }
 
 /* ------------------------------------------------------------------- banner */
@@ -565,6 +592,7 @@ function viewNote() {
 
   const saveButton = el('button', {
     class: 'button',
+    id: 'save-note',
     onclick: () => guard(async () => {
       const result = await chartApi(
         `/encounters/${encounter.encounter_id}/entries`, draftPayload());
@@ -580,7 +608,7 @@ function viewNote() {
   }, 'Save note');
   if (chartState.preview && chartState.preview.gate
       && chartState.preview.gate.blocked) {
-    saveButton.setAttribute('disabled', '');
+    saveButton.disabled = true;
     saveButton.classList.add('button-blocked');
   }
 
@@ -654,11 +682,85 @@ function viewNote() {
       draft.interventions, [
         { key: 'action', label: 'What you did' },
         { key: 'performed_at', label: 'Performed at', kind: 'time' },
+        { key: 'route', label: 'Route' },
+        { key: 'dose', label: 'Dose' },
+        { key: 'site', label: 'Site' },
         { key: 'equipment', label: 'Equipment' },
         { key: 'patient_tolerance', label: 'Patient tolerance' },
         { key: 'evaluated_at', label: 'Re-evaluated at', kind: 'time' },
         { key: 'response', label: 'Response', kind: 'textarea' },
       ], () => ({ action: '', performed_at: '' })),
+
+    repeatable('Wounds and pressure injuries',
+      'Present on admission is the field that carries the most consequence here. '
+      + 'A pressure injury documented on admission is the patient\'s pre-existing '
+      + 'condition; the same injury first described on day three is a '
+      + 'hospital-acquired condition — reportable, non-reimbursable, and the '
+      + 'starting point of a claim. If it was there when you met the patient, say '
+      + 'so in the note that first describes it.',
+      draft.wounds, [
+        { key: 'kind', label: 'Type', kind: 'select',
+          options: ['Pressure injury', 'Surgical incision', 'Venous ulcer',
+            'Arterial ulcer', 'Diabetic foot ulcer', 'Skin tear', 'Abrasion',
+            'Laceration', 'Burn', 'Moisture-associated damage'] },
+        { key: 'location', label: 'Location and side' },
+        { key: 'stage', label: 'Stage', kind: 'select',
+          options: ['Stage 1', 'Stage 2', 'Stage 3', 'Stage 4', 'Unstageable',
+            'Deep tissue injury', 'Not applicable'] },
+        { key: 'length_cm', label: 'Length (cm)', kind: 'number' },
+        { key: 'width_cm', label: 'Width (cm)', kind: 'number' },
+        { key: 'depth_cm', label: 'Depth (cm)', kind: 'number' },
+        { key: 'tunneling_cm', label: 'Tunnelling (cm)', kind: 'number' },
+        { key: 'tunneling_position', label: 'Tunnelling position',
+          hint: 'clock position' },
+        { key: 'undermining_cm', label: 'Undermining (cm)', kind: 'number' },
+        { key: 'undermining_position', label: 'Undermining position' },
+        { key: 'wound_bed', label: 'Wound bed', kind: 'select',
+          options: ['Granulation', 'Slough', 'Eschar', 'Epithelialising',
+            'Mixed granulation and slough', 'Exposed bone or tendon'] },
+        { key: 'drainage_amount', label: 'Drainage amount', kind: 'select',
+          options: ['None', 'Scant', 'Small', 'Moderate', 'Large'] },
+        { key: 'drainage_type', label: 'Drainage type', kind: 'select',
+          options: ['Serous', 'Serosanguinous', 'Sanguinous', 'Purulent'] },
+        { key: 'odour', label: 'Odour' },
+        { key: 'periwound', label: 'Periwound skin' },
+        { key: 'dressing', label: 'Dressing' },
+        { key: 'dressing_changed', label: 'Dressing changed', kind: 'checkbox' },
+        { key: 'present_on_admission', label: 'Present on admission',
+          kind: 'checkbox' },
+        { key: 'photographed', label: 'Photographed per policy', kind: 'checkbox' },
+        { key: 'measured_at', label: 'Measured at', kind: 'time' },
+      ], () => ({ kind: '', location: '' })),
+
+    repeatable('Procedures',
+      'Everything a deposition asks about a procedure, one field at a time: what '
+      + 'was done, by whom, with consent, how the patient tolerated it, and what '
+      + 'you found when you looked again. A procedure recorded as a single line '
+      + 'of prose loses whichever of those the writer was not thinking about.',
+      draft.procedures, [
+        { key: 'name', label: 'Procedure' },
+        { key: 'performed_at', label: 'Performed at', kind: 'time' },
+        { key: 'performed_by', label: 'Performed by' },
+        { key: 'assisted_by', label: 'Assisted by' },
+        { key: 'consent', label: 'Consent', kind: 'select',
+          options: ['Written consent in the chart', 'Verbal consent obtained',
+            'Emergency — consent not obtainable', 'Not required'] },
+        { key: 'time_out', label: 'Time-out performed', kind: 'checkbox' },
+        { key: 'site', label: 'Site and side' },
+        { key: 'site_marked', label: 'Site marked', kind: 'checkbox' },
+        { key: 'sterile', label: 'Sterile technique maintained', kind: 'checkbox' },
+        { key: 'anaesthetic', label: 'Local anaesthetic' },
+        { key: 'attempts', label: 'Number of attempts', kind: 'number' },
+        { key: 'equipment', label: 'Equipment and size' },
+        { key: 'specimen', label: 'Specimen sent' },
+        { key: 'tolerance', label: 'How the patient tolerated it', kind: 'textarea' },
+        { key: 'complications', label: 'Complications', kind: 'textarea' },
+        { key: 'post_assessment', label: 'Post-procedure assessment',
+          kind: 'textarea' },
+        { key: 'post_assessed_at', label: 'Post-procedure check at', kind: 'time' },
+        { key: 'education', label: 'Aftercare explained to the patient',
+          kind: 'textarea' },
+      ], () => ({ name: '', performed_at: '' })),
 
     repeatable('Provider notification',
       'The single most load-bearing record in this tool. In a case where a patient '
@@ -745,7 +847,7 @@ function viewNote() {
     el('div', { id: 'gate-panel' }, gatePanel()),
 
     el('div', { class: 'sticky-actions' }, saveButton,
-      el('span', { class: 'hint' },
+      el('span', { class: 'hint', id: 'save-hint' },
         chartState.preview && chartState.preview.gate.blocked
           ? 'Save is disabled by an interlock — see Checks above.'
           : 'The server runs the same checks again on save.')));

@@ -135,9 +135,11 @@ RULES: list[Rule] = [
                 r"risk\s+management|safety\s+report|near\s+miss\s+report)\b",
         category="liability",
         severity=Severity.BLOCK,
-        message="Do not reference an incident report, event report or risk "
-                "management in the clinical chart. Document only the clinical "
-                "facts of the event.",
+        # The specification gave this message verbatim. It is reproduced exactly
+        # rather than paraphrased, because the wording is what the nurse reads at
+        # the moment they are about to make the mistake.
+        message="Error: Do not reference incident reports in the clinical chart. "
+                "Document only the clinical facts of the event.",
         suggestion="Delete the reference. Chart what happened to the patient, "
                    "what you assessed, who you notified and what was done. File "
                    "the incident report separately — it is a distinct document "
@@ -179,7 +181,8 @@ RULES: list[Rule] = [
         pattern=r"\b(by\s+mistake|by\s+accident|accidentally|inadvertently|"
                 r"my\s+fault|I\s+forgot|I\s+failed\s+to|error\s+on\s+my\s+part|"
                 r"should\s+have\s+(?:been|given|checked|noticed)|"
-                r"wrong\s+(?:med|medication|dose|patient|site|route)\s+was\s+given)\b",
+                r"wrong\s+(?:med|medication|dose|patient|site|route|time|"
+                r"limb|side|blood|product|chart))\b",
         category="liability",
         severity=Severity.BLOCK,
         message="This phrases an event as fault. Chart what happened, not whose "
@@ -326,7 +329,7 @@ RULES: list[Rule] = [
     Rule(
         code="ate_well",
         pattern=r"\b(ate\s+(?:well|good|fine|most|some)|"
-                r"good\s+(?:appetite|intake|night|day|shift)|"
+                r"good\s+(?:appetite|intake)|"
                 r"poor\s+(?:appetite|intake)|drank\s+(?:well|some|a\s+little))\b",
         category="vague",
         message="Not quantified.",
@@ -335,8 +338,11 @@ RULES: list[Rule] = [
     ),
     Rule(
         code="good_night",
+        # "Good night" belongs here rather than with the meal rule. It used to be
+        # matched by `ate_well`, which then offered "consumed 80% of the meal" as
+        # the objective alternative to a statement about sleep.
         pattern=r"\b(slept\s+(?:well|all\s+night|through\s+the\s+night)|"
-                r"restful\s+night|quiet\s+(?:night|shift))\b",
+                r"restful\s+night|good\s+night|quiet\s+(?:night|shift))\b",
         category="vague",
         message="Not quantified, and \"slept all night\" implies continuous "
                 "observation you probably did not have.",

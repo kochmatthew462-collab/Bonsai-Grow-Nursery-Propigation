@@ -82,6 +82,8 @@ def compose(entry: Entry, encounter: Encounter, *,
 
 def _subjective(entry: Entry) -> str:
     parts: list[str] = []
+    if entry.reason.strip():
+        parts.append(f"Reason for this note: {entry.reason.strip()}")
     if entry.subjective.strip():
         parts.append(entry.subjective.strip())
     return "\n".join(parts)

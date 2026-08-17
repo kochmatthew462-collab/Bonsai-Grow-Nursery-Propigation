@@ -709,6 +709,11 @@ class Entry:
     late_entry: bool = False
     late_by_minutes: int = 0
 
+    # Why this note exists. The specification put it in the S section beside the
+    # patient's own words, and there was nowhere to put it — the entry-kind
+    # dropdown was standing in for it, which answers "what kind of note" rather
+    # than "what prompted it".
+    reason: str = ""
     subjective: str = ""
     objective: str = ""
     assessment: str = ""

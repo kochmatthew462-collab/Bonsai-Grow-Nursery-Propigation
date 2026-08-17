@@ -524,7 +524,10 @@ register(Scale(
     note="The full model has more than 30 weighted factors. The most commonly "
          "scored ones are here; add the remainder from your unit's form in the "
          "notes field if they apply.",
-    score_range=(0, 30),
+    # The listed factors sum well past 30, so the old (0, 30) range printed a
+    # misleading "(range 0-30)" and any total above it fell outside every band and
+    # came back with no interpretation at all.
+    score_range=(0, 45),
     reassess_minutes=1440,
     items=[
         _graded("age", "Age band", [
@@ -557,7 +560,12 @@ register(Scale(
                                     "3-4 moderate, 5 or above high."),
         Band(2, 2, "low risk", "Published low-risk score."),
         Band(3, 4, "moderate risk", "Published moderate-risk range."),
-        Band(5, 30, "high risk", "Published high-risk range."),
+        Band(5, 8, "high risk", "Published high-risk range."),
+        Band(9, 45, "highest risk",
+             "The commonly published banding stops at \"5 or more\"; scores of 9 "
+             "and above are frequently separated out as a highest-risk group. "
+             "Use your unit's protocol for the threshold that changes "
+             "prophylaxis."),
     ],
 ))
 
@@ -1280,6 +1288,49 @@ register(Scale(
 ))
 
 
+def _score_apache(scale: Scale, responses: dict[str, Any]) -> dict[str, Any]:
+    """APACHE II, with the acute-renal-failure doubling applied.
+
+    The published score doubles the creatinine points when acute renal failure is
+    present. Leaving that to a label the user could read but not act on meant the
+    total ran silently low in exactly the patients the score exists for.
+    """
+    computed = scale._additive(responses)
+    renal = str(responses.get("acute_renal_failure", "")).lower()
+    if renal.startswith("yes") and "creatinine" in computed["subscores"]:
+        creatinine = computed["subscores"]["creatinine"]
+        computed["score"] += creatinine
+        computed["subscores"]["creatinine"] = creatinine * 2
+    return computed
+
+
+def _score_news2(scale: Scale, responses: dict[str, Any]) -> dict[str, Any]:
+    """NEWS2, refusing to score both oxygen-saturation scales at once.
+
+    Scale 1 and scale 2 are alternatives: scale 2 applies only when target
+    saturations of 88-92% have been prescribed. Both are optional items, so a user
+    who filled in both had both counted, inflating the aggregate by up to three
+    points on the one measure clinicians act on fastest.
+    """
+    filled = [key for key in ("spo2", "spo2_scale2")
+              if str(responses.get(key, "") or "").strip()]
+    computed = scale._additive(responses)
+    if len(filled) == 2:
+        scale_one = computed["subscores"].pop("spo2", 0.0)
+        computed["score"] -= scale_one
+        band = scale.band_for(computed["score"])
+        computed["band"] = band.label if band else ""
+        computed["band_detail"] = (
+            "Both oxygen-saturation scales were completed. They are alternatives, "
+            "not additions — scale 2 applies only when target saturations of "
+            "88-92% are prescribed — so scale 1 has been dropped from this total. "
+            "Clear whichever does not apply to your patient."
+            + (f" {band.detail}" if band else ""))
+    elif not filled:
+        computed["missing"].append("Oxygen saturation (scale 1 or scale 2)")
+    return computed
+
+
 # ========================================================== deterioration scores
 
 
@@ -1379,6 +1430,7 @@ register(Scale(
     score_range=(0, 20),
     reassess_minutes=240,
     settings=("med_surg", "emergency", "icu"),
+    scorer=_score_news2,
     items=[
         _graded("rr", "Respiratory rate", [
             ("8 or below", 3), ("9-11", 1), ("12-20", 0), ("21-24", 2),
@@ -1496,6 +1548,7 @@ register(Scale(
          "misrepresents it.",
     score_range=(0, 71),
     settings=("icu",),
+    scorer=_score_apache,
     items=[
         _graded("temp", "Worst temperature in degrees Celsius", [
             ("41 or above", 4), ("39-40.9", 3), ("38.5-38.9", 1),
@@ -1534,11 +1587,16 @@ register(Scale(
             ("7 or above", 4), ("6-6.9", 3), ("5.5-5.9", 1), ("3.5-5.4", 0),
             ("3-3.4", 1), ("2.5-2.9", 2), ("Below 2.5", 4),
         ]),
-        _graded("creatinine", "Worst serum creatinine mg/dL — double the points in "
-                              "acute renal failure", [
+        _graded("creatinine", "Worst serum creatinine mg/dL", [
             ("3.5 or above", 4), ("2-3.4", 3), ("1.5-1.9", 2), ("0.6-1.4", 0),
             ("Below 0.6", 2),
         ]),
+        # A separate item rather than a note on the one above: the published score
+        # doubles the creatinine points in acute renal failure, and a label that
+        # only *said* so left the doubling to a user who had no way to apply it.
+        _graded("acute_renal_failure", "Acute renal failure present", [
+            ("No", 0), ("Yes — creatinine points are doubled", 0),
+        ], hint="Doubles the creatinine points, per Knaus et al. (1985)."),
         _graded("haematocrit", "Worst haematocrit percentage", [
             ("60 or above", 4), ("50-59.9", 2), ("46-49.9", 1), ("30-45.9", 0),
             ("20-29.9", 2), ("Below 20", 4),
@@ -2134,8 +2192,21 @@ def prefill_from_vitals(scale_id: str, vitals: Vitals) -> dict[str, Any]:
             prefilled["air_or_oxygen"] = "oxygen" if on_oxygen else "air"
         return prefilled
 
-    if scale_id in ("nrs", "wong_baker") and vitals.pain_score is not None:
+    if scale_id == "nrs" and vitals.pain_score is not None:
         return {"score": str(int(vitals.pain_score))}
+
+    if scale_id == "wong_baker" and vitals.pain_score is not None:
+        # FACES has anchors at 0, 2, 4, 6, 8 and 10 only. An odd recorded score
+        # produced a key no option carried, so the scale came back unscored with
+        # no explanation. Snap to the nearest anchor — the nurse re-checks it
+        # against the licensed chart anyway, which is the whole point of the
+        # caveat the route returns with this.
+        # Ties round UP. An odd score sits exactly between two anchors, and of the
+        # two possible errors, understating a patient's pain is the one that
+        # changes what happens to them.
+        anchor = min((0, 2, 4, 6, 8, 10),
+                     key=lambda a: (abs(a - vitals.pain_score), -a))
+        return {"score": str(anchor)}
 
     return {}
 

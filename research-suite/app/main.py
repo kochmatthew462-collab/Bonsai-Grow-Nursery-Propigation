@@ -22,7 +22,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import security, settings as settings_module, storage
-from .apa import assemble, audit_document, deck as deck_module, figures as figures_module, prisma as prisma_module
+from .apa import (
+    assemble, audit_document, deck as deck_module, figures as figures_module,
+    prisma as prisma_module, workbook as workbook_module,
+)
 from .charting import routes as charting_routes, store as charting_store
 from .compliance import journals as journals_module, rubric as rubric_module, \
     simulator as simulator_module
@@ -37,8 +40,8 @@ from .models import (
 from .sources import gov, importers, scholarly  # noqa: F401  (registers sources)
 from .sources.base import REGISTRY, Fetcher
 from .writing import (
-    draft as draft_module, integrity, statistics as statistics_module,
-    style as style_module,
+    draft as draft_module, integrity, proof as proof_module,
+    statistics as statistics_module, style as style_module,
 )
 
 SETTINGS = settings_module.load()
@@ -559,6 +562,7 @@ async def export(
     paper: bool = Body(True),
     audit: bool = Body(True),
     slides: bool = Body(False),
+    matrix: bool = Body(True),
     abstract: str = Body(""),
     keywords: list[str] = Body(default=[]),
     font: str = Body(""),
@@ -589,11 +593,48 @@ async def export(
         if abstract.strip():
             builder.abstract(abstract, keywords or assemble.suggest_keywords(project))
         builder.body(assemble.build_blocks(project, context))
+
+        # Attached figures, placed as numbered APA figures with their structured
+        # notes. The figure generator existed from the start and nothing ever
+        # called it for the paper — an audit found `ApaPaper.figure` and
+        # `ApaPaper.table` reachable from no code path at all.
+        for index, attached in enumerate(
+                (getattr(project, "notes", None) or {}).get("figures", []), 1):
+            image = out / str(attached.get("path", ""))
+            if not image.exists():
+                continue
+            builder.figure(
+                number=index,
+                title=str(attached.get("title") or f"Figure {index}"),
+                image_path=str(image),
+                note=str(attached.get("note") or attached.get("caption") or ""))
+            data = attached.get("table") or {}
+            if data.get("headers") and data.get("rows"):
+                # The underlying numbers as an APA table beside the figure. A
+                # figure a reader cannot check is a figure they have to take on
+                # trust.
+                builder.table(
+                    number=index,
+                    title=f"Values Plotted in Figure {index}",
+                    headers=list(data["headers"]),
+                    rows=[[str(cell) for cell in row] for row in data["rows"]],
+                    note="Values from which the figure was drawn.")
+
         builder.references(project.cited_works())
         path = out / f"{project.project_id}-paper.docx"
         builder.save(str(path))
         written.append({"kind": "paper", "name": path.name,
                         "words": str(assemble.word_count(project))})
+
+    if matrix:
+        # The evidence matrix as a spreadsheet. It is the one artefact here that
+        # is worked *on* rather than read — sorted by level, filtered to the
+        # trials, a column pasted into a meta-analysis — and a Word table does
+        # none of that.
+        path = out / f"{project.project_id}-evidence-matrix.xlsx"
+        workbook_module.write_matrix(project, path)
+        written.append({"kind": "evidence matrix", "name": path.name,
+                        "words": ""})
 
     if audit:
         context.reset_group_state()
@@ -651,6 +692,141 @@ async def level_figure(project_id: str) -> dict[str, Any]:
     return {"path": Path(figure.path).name, "note": figure.note,
             "table": {"headers": figure.data_table[0], "rows": figure.data_table[1]}}
 
+
+
+
+# --------------------------------------------------------- grammar and figures
+
+
+@app.get("/api/projects/{project_id}/proof")
+async def proof_project(project_id: str, url: str = "") -> dict[str, Any]:
+    """Grammar-check every claim, keeping each issue tied to its claim.
+
+    This endpoint is why `writing/proof.py` exists. It was written, tested and
+    then never called from anywhere — an audit of this codebase found it imported
+    by nothing, which is the quietest way for a feature to not exist.
+    """
+    project = _load(project_id)
+    report = await proof_module.check_project(project, url=url)
+    return {
+        "available": report.available,
+        "engine": report.engine,
+        "note": report.note,
+        "checked_words": report.checked_words,
+        "by_category": report.by_category(),
+        "issues": [
+            {
+                "message": issue.message, "context": issue.context,
+                "offset": issue.offset, "length": issue.length,
+                "replacements": issue.replacements, "rule": issue.rule,
+                "category": issue.category, "claim_id": issue.claim_id,
+                "section": issue.section,
+            }
+            for issue in report.issues
+        ],
+        "grammarly": proof_module.grammarly_report(),
+    }
+
+
+@app.get("/api/grammarly")
+async def grammarly() -> dict[str, Any]:
+    return proof_module.grammarly_report()
+
+
+@app.post("/api/projects/{project_id}/figure")
+async def build_figure(project_id: str,
+                       payload: dict = Body(...)) -> dict[str, Any]:
+    """Build one of the figure types the specification named.
+
+    Forest plots, incidence curves and bar charts were implemented in
+    `apa/figures.py` with a validated palette and greyscale-safe secondary
+    encoding, and nothing in the application ever called them. Only the
+    level-distribution chart had a route.
+    """
+    project = _load(project_id)
+    out = SETTINGS.export_dir / project.project_id
+    out.mkdir(parents=True, exist_ok=True)
+    kind = str(payload.get("kind", "")).strip()
+    title = str(payload.get("title", "") or "")
+    caption = str(payload.get("caption", "") or "")
+
+    try:
+        if kind == "forest":
+            estimates = [
+                figures_module.EffectEstimate(
+                    label=str(row.get("label", "")),
+                    estimate=float(row.get("estimate")),
+                    lower=float(row.get("lower", row.get("low"))),
+                    upper=float(row.get("upper", row.get("high"))),
+                    weight=float(row.get("weight", 0) or 0),
+                    subgroup=str(row.get("subgroup", "") or ""),
+                )
+                for row in (payload.get("estimates") or [])
+                if row.get("estimate") not in (None, "")
+            ]
+            if not estimates:
+                raise HTTPException(400, "No effect estimates supplied.")
+            figure = figures_module.forest_plot(
+                estimates, path=out / "figure-forest.png", title=title,
+                measure=str(payload.get("measure", "Odds ratio")))
+        elif kind in ("line", "incidence"):
+            # JSON gives lists where the signature wants (name, values) tuples.
+            series = [(str(row[0]), [float(v) for v in row[1]])
+                      for row in (payload.get("series") or []) if len(row) >= 2]
+            figure = figures_module.line_figure(
+                [str(x) for x in (payload.get("x_labels") or [])], series,
+                path=out / "figure-line.png", title=title,
+                x_label=str(payload.get("x_label", "")),
+                y_label=str(payload.get("y_label", "")))
+        elif kind == "bar":
+            figure = figures_module.bar_figure(
+                [str(x) for x in (payload.get("categories") or [])],
+                [float(v) for v in (payload.get("values") or [])],
+                path=out / "figure-bar.png", title=title,
+                y_label=str(payload.get("y_label", "")))
+        elif kind == "grouped_bar":
+            series = [(str(row[0]), [float(v) for v in row[1]])
+                      for row in (payload.get("series") or []) if len(row) >= 2]
+            figure = figures_module.grouped_bar_figure(
+                [str(x) for x in (payload.get("categories") or [])], series,
+                path=out / "figure-grouped-bar.png", title=title,
+                y_label=str(payload.get("y_label", "")))
+        else:
+            raise HTTPException(400, f"unknown figure kind {kind!r}")
+    except HTTPException:
+        raise
+    except (TypeError, ValueError) as error:
+        raise HTTPException(400, f"Could not build the figure: {error}")
+
+    # Attach it so the exporter can place it in the paper as an APA figure.
+    if not isinstance(getattr(project, "notes", None), dict):
+        project.notes = {}
+    stored = project.notes.setdefault("figures", [])
+    name = Path(figure.path).name
+    stored[:] = [f for f in stored if f.get("path") != name]
+    stored.append({
+        "path": name, "kind": kind, "title": title or kind.title(),
+        "caption": caption, "note": figure.note,
+        "table": {"headers": figure.data_table[0],
+                  "rows": figure.data_table[1]} if figure.data_table else None,
+    })
+    STORE.save(project)
+
+    return {
+        "path": name, "note": figure.note,
+        "table": {"headers": figure.data_table[0], "rows": figure.data_table[1]}
+                 if figure.data_table else None,
+        "attached": True,
+        "placement": ("Attached to the project. The exporter places it in the "
+                      "paper as a numbered APA figure with its note beneath, and "
+                      "on a slide in the deck."),
+    }
+
+
+@app.get("/api/projects/{project_id}/figures")
+async def list_figures(project_id: str) -> dict[str, Any]:
+    project = _load(project_id)
+    return {"figures": (getattr(project, "notes", None) or {}).get("figures", [])}
 
 
 # ------------------------------------------------- question framing and search

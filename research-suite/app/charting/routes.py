@@ -683,8 +683,8 @@ def _entry_from_payload(payload: dict[str, Any],
     entry.author_credential = str(payload.get("author_credential", "")).strip()[:40]
     entry.event_at = str(payload.get("event_at", "")).strip()
 
-    for name in ("subjective", "objective", "assessment", "plan", "labs",
-                 "pending"):
+    for name in ("reason", "subjective", "objective", "assessment", "plan",
+                 "labs", "pending"):
         setattr(entry, name, str(payload.get(name, "") or "").strip())
 
     entry.vitals = _vitals(payload.get("vitals") or {})
@@ -728,6 +728,17 @@ def _entry_from_payload(payload: dict[str, Any],
     # decides where the language checker looks — see `interlocks.evaluate`.
     entry.narrative_is_derived = not supplied or supplied == composed.strip()
     entry.narrative = supplied or composed
+
+    # The late-entry tag is applied by the composer, so a narrative the nurse
+    # typed used to lose it entirely — the one note most likely to be edited by
+    # hand is the one recalled hours later. Prepend it here instead, once, so it
+    # reaches both paths.
+    if entry.late_entry and "[LATE ENTRY]" not in entry.narrative:
+        stamp = narrative._clock
+        entry.narrative = (
+            f"[LATE ENTRY] Event occurred at {stamp(entry.event_at)}; "
+            f"documented at {stamp(entry.documented_at)}, "
+            f"{entry.late_by_minutes} minutes later.\n\n" + entry.narrative)
     return entry, entry.narrative
 
 

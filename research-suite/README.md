@@ -40,6 +40,8 @@ something that quietly does less than it claims, here is the honest ledger.
 | Verify 0% similarity before export | **Not achievable and not desirable.** No legitimate paper scores 0% — reference lists match the original articles byte-for-byte by design, quotations are supposed to match verbatim, and the standard phrasing of the field recurs in thousands of papers. Real journals see 16–19% on average. **0% is the fraud signature**, not the goal. → The tool reports **unattributed verbatim overlap against the sources you actually cited**, with offsets, and blocks export on citation defects. It never prints a percentage. See [What "no plagiarism" can honestly mean](#what-no-plagiarism-can-honestly-mean). |
 | Reproduce CASP / JBI / AGREE II checklists | **Depends on the instrument, and the differences are large.** JBI's 2023–25 tools say "unauthorized reproduction prohibited"; COREQ is all-rights-reserved. → The tool implements the same methodological **domains** in its own words, names and cites the instrument it follows, and never reproduces item text. See [Appraisal and licensing](#appraisal-and-licensing). |
 | AI-detection gate before export | **Deliberately not built.** Detectors measure perplexity, not authorship, and misclassify non-native-English writing at a high rate (Liang et al., *Patterns*, 2023). Gating on one would fail honest work. → A claim-by-claim provenance ledger instead, which is something a detector cannot give you. |
+| Royalty-free visual assets with APA provenance | **Not built, and this row exists because an audit found it missing from this table.** The tool generates figures from your own data and cites them properly; it does not source stock imagery. A general image search that respected licensing would need a licensed image API and a rights database, and an unlicensed one would hand you an image you cannot legally publish while telling you that you can — which is worse than nothing. → Generate figures from data, or supply your own image and record its licence and attribution yourself. |
+| Pull graphs, pictures and charts *out of* retrieved papers | **Not built.** A figure lifted from a published paper is the copyright holder's, and reproducing one in your own work needs permission that a tool cannot grant. Extracting the underlying *data* from a published chart is also not reliable enough to trust silently. → The suite plots figures from data you enter or from the CDC and WHO data APIs, with the provenance and licence recorded. |
 | A charting tab that leaves a nurse "100% covered" in litigation | **No document guarantees an outcome.** A nurse who did the right thing can still be named; one who documented perfectly can still be found to have breached a standard of care. → The tool structures the five things that actually go missing under pressure — observation, impression, action, **notification**, re-evaluation — and refuses to save a note that drops the one that matters. See [The charting tab](#the-charting-tab). |
 | Auto-suggest an ESI triage level from vitals and chief complaint | **This is clinical decision support and it would be unsafe.** A triage acuity assigned by a tool is also indefensible in a deposition. → The tool walks the four published decision points *you* answer, computes what the algorithm yields, shows the working, and displays the danger-zone thresholds so your judgement is informed rather than replaced. |
 | Reproduce Braden, Morse, Wong-Baker FACES, CAM-ICU, FLACC, CPOT, ESI, APACHE II | **Copyrighted, and FACES is a trademark whose artwork is licensed.** A subtly paraphrased near-copy would be worse than either extreme: it looks like the instrument while scoring something slightly different. → Scoring arithmetic and published thresholds implemented, item wording written fresh, no artwork reproduced, every rights holder named on the Reference screen. |
@@ -472,7 +474,9 @@ trusted as current is worse than none.
 
 ---
 
-## The two documents
+## The four artefacts
+
+An export produces four files.
 
 **The paper** (`*-paper.docx`) is a real APA 7 manuscript: 1-inch margins,
 double-spaced throughout, 0.5-inch first-line indents, page number in a header
@@ -481,6 +485,15 @@ levels, hanging-indent reference list on its own page, and tables with
 horizontal rules only. 85 automated checks assert this against the generated
 OOXML rather than against the builder's return values, because everything that
 goes wrong in Word export goes wrong between the API call and the file.
+
+**The evidence matrix** (`*-evidence-matrix.xlsx`) is the matrix as a
+spreadsheet rather than as a Word table, because it is the one artefact here that
+is worked *on* rather than read: sorted by level of evidence, filtered to the
+trials, a column pasted into a meta-analysis. Frozen header, auto-filter, numbers
+typed as numbers so a sample size of 9 sorts before 1,204, and a second sheet
+recording where every record came from and what was done to it. Written by
+assembling the OOXML directly rather than by adding a spreadsheet library — the
+same judgement `apa/ooxml.py` makes about Word — so it costs no dependency.
 
 **The companion document** (`*-rationale-and-sources.docx`) is what makes the
 paper defensible. Nine sections:
@@ -784,6 +797,7 @@ app/
     audit_document.py  the companion rationale and mapping document
     deck.py          APA-conventional slides
     figures.py       validated-palette figures, forest plots
+    workbook.py      the evidence matrix as .xlsx, OOXML written directly
     prisma.py        the PRISMA 2020 flow diagram, drawn and arithmetic-checked
   writing/
     draft.py         claim-ledger drafting, AI-use disclosure
@@ -813,7 +827,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               3,111 checks, all offline
+tests/               3,141 checks, all offline
 ```
 
 ## Tests
@@ -833,12 +847,12 @@ take against Firestore.
 | `test_docx_layout.py` | 85 | Assertions against the saved OOXML: margins, all four font attributes, double spacing, the `PAGE` **field** rather than a literal digit, running head presence by paper type, five distinct heading levels, hanging indents, horizontal-only table borders |
 | `test_evidence.py` | 121 | Real CINAHL/Ovid/PubMed/Zotero/Scopus export shapes; `Review` ≠ systematic review; retraction excluded rather than graded; DOI/PMID/title dedupe; conflicting DOIs kept separate; retraction propagating through a merge |
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
-| `test_charting_scales.py` | 1,447 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
+| `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
 | `test_research_tools.py` | 266 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say |
-| `test_frontend.py` | 60 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired |
+| `test_frontend.py` | 62 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
-| `test_charting_flow.py` | 250 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
+| `test_charting_flow.py` | 269 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
 
 ---
 

@@ -170,7 +170,12 @@ def escalation_prompt(entry: Entry) -> Flag | None:
 
     stalled = latest.no_response or (not latest.response and not latest.orders_received)
     unstable = bool(critical_values(entry.vitals))
-    if not stalled and not (latest.no_new_orders and unstable):
+    # "No orders received" is inferred from the absence of orders rather than from
+    # the nurse ticking `no_new_orders`. Conditioning the prompt on that checkbox
+    # meant the commonest real case — a provider who answered but ordered nothing,
+    # on a patient still crossing a threshold — never prompted at all.
+    no_orders = not latest.orders_received.strip()
+    if not stalled and not (no_orders and unstable):
         return None
 
     already = {n.provider_role.lower() for n in entry.notifications}
@@ -344,10 +349,19 @@ def copy_forward_flag(encounter: Encounter, entry: Entry) -> Flag | None:
     if not same_narrative:
         return None
 
-    vitals_moved = (
-        previous.vitals.narrative() != entry.vitals.narrative()
-        and not entry.vitals.is_empty()
-    )
+    # Compare the readings, not the rendered sentence: the sentence carries the
+    # time it was taken, so bumping only "time taken" changed the narrative and
+    # cleared the check while every number stayed identical. The specification
+    # asked for timestamps AND vitals AND variance notes to be updated, and a
+    # timestamp alone is the easiest of the three to move.
+    def readings(vitals: Vitals) -> tuple:
+        return (vitals.systolic, vitals.diastolic, vitals.map_mmhg,
+                vitals.heart_rate, vitals.respiratory_rate, vitals.spo2,
+                vitals.temperature_c, vitals.pain_score, vitals.blood_glucose,
+                vitals.end_tidal_co2)
+
+    vitals_moved = (readings(previous.vitals) != readings(entry.vitals)
+                    and not entry.vitals.is_empty())
     if vitals_moved:
         return None
 
@@ -486,6 +500,12 @@ class Gate:
 NON_OVERRIDABLE = {
     "incident_report", "other_patient", "blame_colleague", "admission_of_fault",
     "event_in_future",
+    # The specification called this a hard stop and it was not one: leaving it
+    # overridable meant a paediatric medication could be saved with no weight by
+    # typing any reason. A pounds-for-kilograms substitution is a 2.2-fold
+    # overdose, and there is no emergency in which the right answer is to
+    # document the dose without the weight it was calculated from.
+    "paediatric_weight_required",
 }
 
 
@@ -550,7 +570,14 @@ def evaluate(encounter: Encounter, entry: Entry, *,
 
     # 3. Critical values and the notification requirement.
     crossed = critical_values(entry.vitals)
-    complete_notification = any(n.is_complete() for n in entry.notifications)
+    # The specification asked for time, name, method AND response. `is_complete`
+    # alone checks the first three, so a notification with no outcome recorded
+    # used to clear the gate — which is precisely the "MD aware" note the whole
+    # interlock exists to prevent.
+    complete_notification = any(
+        n.is_complete() and (n.response or n.orders_received or n.no_new_orders
+                             or n.no_response)
+        for n in entry.notifications)
     escalated = any(n.escalated_to for n in entry.notifications)
     requires_notification = bool(crossed) and entry.kind not in (
         EntryKind.HANDOFF, EntryKind.ASSIGNMENT, EntryKind.DISCHARGE,
@@ -696,6 +723,32 @@ def _completeness(entry: Entry) -> list[Flag]:
                  f"intervention:{intervention.intervention_id}")
 
     for med in entry.medications:
+        # A re-evaluation recorded a minute after the dose is not a
+        # re-evaluation. Nothing compared these two times, so an R/P could claim
+        # "Re-evaluated at 17:48" on a dose given at 17:48 and compose cleanly.
+        if med.effect and med.effect_checked_at and med.given_at:
+            given = parse_iso(med.given_at)
+            checked = parse_iso(med.effect_checked_at)
+            if given and checked:
+                gap = int((checked - given).total_seconds() // 60)
+                if gap < 5:
+                    warn("effect_checked_too_soon",
+                         f"{med.name or 'A medication'} was re-evaluated "
+                         f"{gap} minute{'s' if gap != 1 else ''} after it was "
+                         f"given.",
+                         "Most medications have not had time to work. Record the "
+                         "time you actually looked again — a re-evaluation "
+                         "timed to the minute of administration reads as a "
+                         "box being ticked rather than a patient being "
+                         "assessed.",
+                         f"medication:{med.med_id}")
+                elif gap < 0:
+                    warn("effect_checked_before_dose",
+                         f"{med.name or 'A medication'} was re-evaluated before "
+                         f"it was given.",
+                         "Check the two times.",
+                         f"medication:{med.med_id}")
+
         if med.held and not med.hold_reason:
             warn("hold_without_reason",
                  f"{med.name or 'A medication'} is marked held with no reason.",
@@ -789,6 +842,31 @@ def _completeness(entry: Entry) -> list[Flag]:
                  "anticoagulated. Post-fall neuro checks on an anticoagulated "
                  "patient are the single most examined element of a fall case.",
                  "module_data.fall")
+
+    if entry.kind is EntryKind.PROCEDURE:
+        procedures = entry.module_data.get("procedures") or []
+        if not procedures:
+            warn("procedure_note_without_procedure",
+                 "This is a procedure note with no procedure recorded.",
+                 "Add the procedure, who performed it, consent, how the patient "
+                 "tolerated it and what you found afterwards.",
+                 "module_data.procedures")
+        for index, procedure in enumerate(procedures):
+            if not isinstance(procedure, dict):
+                continue
+            name = str(procedure.get("name", "") or "the procedure")
+            for key, label in (("consent", "consent"),
+                               ("tolerance", "how the patient tolerated it"),
+                               ("post_assessment", "the post-procedure "
+                                                   "assessment")):
+                if not str(procedure.get(key, "") or "").strip():
+                    warn(f"procedure_missing_{key}",
+                         f"{name}: {label} is not recorded.",
+                         "Each of these is asked about separately in a "
+                         "deposition, and a procedure written as one line of "
+                         "prose loses whichever the writer was not thinking "
+                         "about at the time.",
+                         f"module_data.procedures[{index}]")
 
     if entry.kind is EntryKind.EDUCATION:
         education = entry.module_data.get("education") or {}
