@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import security, settings as settings_module, storage
 from .apa import assemble, audit_document, deck as deck_module, figures as figures_module
+from .charting import routes as charting_routes, store as charting_store
 from .apa.citations import CitationContext
 from .apa.document import ApaPaper, APPROVED_FONTS, default_running_head
 from .evidence import appraisal as appraisal_module, dedupe, levels
@@ -42,6 +43,16 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Koch Research Suite", docs_url=None, redoc_url=None,
               openapi_url=None)
+
+# The charting tab. It gets its own store and export directory rather than sharing
+# the research project store, because the two hold different kinds of thing and
+# have different lifetimes: a research project is kept for months, and a shift's
+# charting should be purged when the shift ends. Separate directories make
+# "delete all the clinical data and none of the research" a one-line operation.
+CHART_STORE = charting_store.EncounterStore(SETTINGS.data_dir / "charting")
+CHART_EXPORTS = SETTINGS.export_dir / "charting"
+charting_routes.configure(CHART_STORE, CHART_EXPORTS)
+app.include_router(charting_routes.router)
 
 
 def fetcher() -> Fetcher:
