@@ -55,6 +55,27 @@
     maintenance: { good: [0.4, 0.8], warn: [0.3, 2.0] }
   };
 
+
+  /*
+   * The bench drip programme. There is no way to ask the GrowHub outlet how
+   * much water it delivered — it is a smart switch, and it reports on/off, not
+   * volume — so delivered water is DERIVED: emitters x calibrated flow x
+   * runtime, on the days the recipe runs. The packet's catch-cup pass (lift the
+   * staked lines into cups, run 2 minutes, mL / 2 = mL per minute per emitter)
+   * is what turns the nominal figure below into a measured one.
+   *
+   * days: 0 = Sunday. Sunday is never scheduled — it is the hand-watering day.
+   */
+  var BENCH_DRIP = {
+    nominalMlPerMin: 11.7,   // 0.7 L/hr per emitter, the kit's nominal figure
+    seasons: [
+      { label: 'Winter', from: '11-01', to: '03-14', days: [2, 5],             minutes: 6 },
+      { label: 'Spring', from: '03-15', to: '05-31', days: [1, 3, 5],          minutes: 8 },
+      { label: 'Summer', from: '06-01', to: '09-15', days: [1, 2, 3, 4, 5, 6], minutes: 8 },
+      { label: 'Autumn', from: '09-16', to: '10-31', days: [1, 3, 5],          minutes: 8 }
+    ]
+  };
+
   var PROFILES = [
     {
       id: 'generic',
@@ -70,6 +91,23 @@
     /* ------------------------------------------------ indoor bonsai bench */
     {
       id: 'bench-median',
+      tasks: [
+        { id: 'chg-spring', from: '03-15', to: '03-22', category: 'system', title: 'Spring changeover',
+          body: 'Lights 12 to 14 h. Humidifier 3 to 2 sessions. Drip to M/W/F, 8 min. Unclamp the pomegranate as buds move. Move all four systems together.' },
+        { id: 'chg-summer', from: '06-01', to: '06-08', category: 'system', title: 'Peak-season changeover',
+          body: 'Lights 14 to 16 h. Humidifier 2 to 1 session. Drip to Mon-Sat. Arm the heat-pulse habit for days above 85 F.' },
+        { id: 'chg-autumn', from: '09-16', to: '09-23', category: 'system', title: 'Autumn changeover',
+          body: 'Lights 16 to 14 h. Humidifier 1 to 2 sessions. Drip back to M/W/F. Last wiring of the year.' },
+        { id: 'chg-winter', from: '11-01', to: '11-08', category: 'system', title: 'Winter changeover',
+          body: 'Lights 14 to 12 h. Humidifier 2 to 3 sessions. Drip to Tue/Fri, 6 min. Clamp the pomegranate. Feed to winter rates.' },
+        { id: 'lux-audit', from: '01-05', to: '01-31', category: 'measure', title: 'Annual lux audit',
+          body: 'Re-meter lux at every canopy. LEDs depreciate: drop the strips an inch or add a third strip when the top shelf can no longer reach 8,000 lux.' },
+        { id: 'descale', from: '12-01', to: '12-31', category: 'system', title: 'Descale the humidifier',
+          body: 'Monthly through the season, but do not skip the winter one: 1:1 white vinegar, 30 min, rinse well. Distilled or filtered water only.' },
+        { id: 'calibrate-drip', from: '04-01', to: '04-30', category: 'system', title: 'Catch-cup calibration',
+          body: 'Lift all staked lines into cups, manual-run exactly 2 minutes, measure each cup: mL divided by 2 is mL per minute per emitter. Enter it on each plant so the auto-logged water volumes are real rather than nominal. Re-run after any repot, substrate or line change.' }
+      ],
+      drip: { emitters: 2, winterEmitters: 2, schedule: BENCH_DRIP },
       name: 'Bonsai bench — median program',
       scientific: 'shared circuit, USDA zone 7b indoor bench',
       setting: 'indoor',
@@ -114,6 +152,16 @@
     },
     {
       id: 'parrots-beak',
+      tasks: [
+        { id: 'pb-struct', from: '02-01', to: '02-28', category: 'prune', title: 'Structural cuts',
+          body: 'Before the spring push. Mind the spines. Wire semi-lignified shoots in summer instead.' },
+        { id: 'pb-pellets-1', from: '04-01', to: '04-07', category: 'feed', title: 'Top-dress slow-release pellets',
+          body: 'Heaviest feeder on the bench. Pellets count toward EC, so read the meter, not the calendar.' },
+        { id: 'pb-pellets-2', from: '07-01', to: '07-07', category: 'feed', title: 'Second pellet top-dress', body: 'As April.' },
+        { id: 'pb-repot', from: '06-01', to: '06-30', category: 'repot', title: 'Repot window',
+          body: 'Early summer, night lows at or above 70 F, every 1-2 years. Shade until new leaves emerge.' }
+      ],
+      drip: { emitters: 2, winterEmitters: 2, schedule: BENCH_DRIP },
       name: "Parrot's beak",
       scientific: 'Gmelina philippensis · tropical',
       setting: 'indoor',
@@ -139,6 +187,14 @@
     },
     {
       id: 'hawaiian-umbrella',
+      tasks: [
+        { id: 'hu-cutback', from: '05-01', to: '06-30', category: 'prune', title: 'Hard cutback window',
+          body: 'Scissors only. Remove oversized leaves at the petiole; direct with guy-lines and light.' },
+        { id: 'hu-repot', from: '05-01', to: '06-30', category: 'repot', title: 'Repot window', body: 'Late spring, every 2 years.' },
+        { id: 'hu-aerial', from: '06-01', to: '08-31', category: 'prune', title: 'Aerial-root campaign',
+          body: 'Chamber this tree individually above 70% RH rather than raising humidity for the whole bench.' }
+      ],
+      drip: { emitters: 2, winterEmitters: 2, schedule: BENCH_DRIP },
       name: 'Hawaiian umbrella',
       scientific: 'Schefflera arboricola · tropical',
       setting: 'indoor',
@@ -164,6 +220,16 @@
     },
     {
       id: 'ginseng-ficus',
+      tasks: [
+        { id: 'gf-defol', from: '06-20', to: '06-30', category: 'prune', title: 'Defoliation window',
+          body: 'Full or partial, late June, healthy trees only (vigor 4-5). Large cuts heal fastest in warmth. Never stack this with a repot in the same year.' },
+        { id: 'gf-repot', from: '05-01', to: '07-31', category: 'repot', title: 'Repot window', body: 'Late spring to summer, every 2 years.' },
+        { id: 'gf-emitter', from: '01-01', to: '12-31', category: 'system', title: 'Rotate the single emitter',
+          body: 'Monthly. One emitter over the densest roots, moved so it does not channel.' },
+        { id: 'gf-suckers', from: '03-01', to: '10-31', category: 'prune', title: 'Graft-line sucker check',
+          body: 'Through the growing season. Anything below the graft is rootstock and will replace the scion.' }
+      ],
+      drip: { emitters: 1, winterEmitters: 1, schedule: BENCH_DRIP, note: 'Single emitter over the densest roots — rotate its position monthly.' },
       name: 'Ginseng grafted ficus',
       scientific: 'Ficus microcarpa · tropical',
       setting: 'indoor',
@@ -189,6 +255,19 @@
     },
     {
       id: 'dwarf-pomegranate',
+      tasks: [
+        { id: 'dp-struct', from: '12-01', to: '02-28', category: 'prune', title: 'Structural pruning while leafless',
+          body: 'Dec-Feb, when the lines show. Old wood is brittle: water the day before wiring.' },
+        { id: 'dp-repot', from: '03-10', to: '03-31', category: 'repot', title: 'Repot at bud swell',
+          body: 'Early spring, roughly mid-March, every 2-3 years. Its share of the mix can run 10% leaner on organics.' },
+        { id: 'dp-unclamp', from: '03-15', to: '03-25', category: 'system', title: 'Unclamp the drip',
+          body: 'As buds move. Two emitters back on; auto-logging resumes with them.' },
+        { id: 'dp-thin', from: '06-01', to: '07-31', category: 'prune', title: 'Thin fruit to 2-3',
+          body: 'Blooms come on new wood tips, so leave those shoots unpinched. Suspend feed while flowers are open.' },
+        { id: 'dp-clamp', from: '11-01', to: '11-10', category: 'system', title: 'Clamp the drip for winter',
+          body: 'Fold each branch line back and clip; hand-water every 7-10 days through the rest. Keep 1 emitter live if it overwinters warm and in leaf.' }
+      ],
+      drip: { emitters: 2, winterEmitters: 0, schedule: BENCH_DRIP, note: 'Winter bypass: lines clamped, hand-water every 7-10 days. Keep 1 emitter live instead if it overwinters warm and in leaf.' },
       name: 'Dwarf pomegranate',
       scientific: 'Punica granatum var. nana · subtropical',
       setting: 'indoor',
@@ -217,6 +296,32 @@
     /* --------------------------------------------- container trees, ZIP 20833 */
     {
       id: 'bergamot',
+      tasks: [
+        { id: 'bg-prune', from: '02-01', to: '02-28', category: 'prune', title: 'Structural pruning',
+          body: 'During the cool rest. Max 20-25% canopy removal per year. Scaffolds 3-5 at 45-60 degree crotch angles, headed 24-30 in above the media.' },
+        { id: 'bg-ph-spring', from: '03-25', to: '04-10', category: 'measure', title: 'Test media pH (spring)',
+          body: 'Twice-yearly test, before the spring flush. Slurry or pour-through; also read runoff EC. Target media pH 6.0-6.5.' },
+        { id: 'bg-micro', from: '03-01', to: '03-31', category: 'feed', title: 'Micronutrient foliar',
+          body: 'And resume feeding. 3:1:1 or 2:1:1 N:P:K with micronutrients, 100-150 ppm N in active growth.' },
+        { id: 'bg-repot', from: '04-01', to: '04-30', category: 'repot', title: 'Root prune / media refresh if due',
+          body: 'Every 2-3 years, in April only. Avoid September through February: transplanting into declining light is how young citrus are lost.' },
+        { id: 'bg-harden', from: '04-15', to: '05-10', category: 'move', title: 'Begin hardening off',
+          body: 'Two weeks of graduated light and temperature before the move. Skipping this is the usual cause of a bergamot going bare.' },
+        { id: 'bg-out', from: '05-10', to: '05-20', category: 'move', title: 'Move outdoors',
+          body: 'When nights are reliably above 50 F. Peak bloom follows: do not let it dry out.' },
+        { id: 'bg-thin', from: '06-01', to: '06-30', category: 'prune', title: 'Thin fruit after June drop',
+          body: '1 fruit per 20-25 leaves. Mature load is 15-30 on a 5-6 ft tree. Pinch the flush.' },
+        { id: 'bg-n-stop', from: '08-15', to: '08-15', category: 'feed', title: 'Final nitrogen date',
+          body: 'Hard stop. Potassium only after this, so growth hardens before the move indoors.' },
+        { id: 'bg-pest', from: '09-01', to: '09-30', category: 'pest', title: 'Pre-move pest treatments',
+          body: 'Treat before it joins the indoor station, not after. Scale, mealybug, mites.' },
+        { id: 'bg-ph-autumn', from: '09-25', to: '10-10', category: 'measure', title: 'Test media pH (autumn)',
+          body: 'Second of the two annual tests, at the move indoors. Deep flush 2-3x container volume at the same time.' },
+        { id: 'bg-in', from: '10-01', to: '10-15', category: 'move', title: 'Move indoors',
+          body: 'Before nights approach 50 F. Expect leaf drop — it stacks the move with falling light. Do not also repot.' },
+        { id: 'bg-rest', from: '12-01', to: '12-10', category: 'system', title: 'Cool rest begins',
+          body: 'Hold 45-58 F, bright, dry and unfertilised for 8-12 weeks. Never below 40 F at pot level. This is what induces next spring\'s bloom.' }
+      ],
       name: 'Italian bergamot — container',
       scientific: 'Citrus bergamia · young stem graft · ZIP 20833, zone 7b',
       setting: 'seasonal',
@@ -268,6 +373,30 @@
     },
     {
       id: 'arbequina-olive',
+      tasks: [
+        { id: 'ol-chill-log', from: '11-01', to: '02-28', category: 'measure', title: 'Log chill hours weekly',
+          body: 'Running hours below 45 F, plus weeks held at 50-55 F. When the tree does not flower, this log is the first thing to check — always.' },
+        { id: 'ol-prune', from: '02-01', to: '02-28', category: 'prune', title: 'Structural pruning, dry weather only',
+          body: 'Olive knot enters through fresh wounds and rain splash is the main infection route. Sterilise tools with 70% isopropyl; no wound sealant. Max 20-25% canopy per year; 3-4 scaffolds at 45-60 degrees, headed 24-30 in.' },
+        { id: 'ol-feed-on', from: '03-01', to: '03-31', category: 'feed', title: 'Resume feeding at half strength',
+          body: 'Balanced fertiliser, half strength, monthly. Deep flush first.' },
+        { id: 'ol-repot', from: '04-01', to: '04-30', category: 'repot', title: 'Root prune / media refresh if due',
+          body: 'Every 2-3 years, in April.' },
+        { id: 'ol-out', from: '04-15', to: '04-30', category: 'move', title: 'Move outdoors',
+          body: 'Nights above 40 F, mid-to-late April. Harden gradually — an abrupt move into full sun bleaches leaves.' },
+        { id: 'ol-thin', from: '06-01', to: '06-30', category: 'prune', title: 'Thin fruit',
+          body: '1 fruit per 6-8 in of fruiting shoot, on one-year-old wood. Thin, never shear. Heavy flower drop before this is normal — 1-2% set is a good year.' },
+        { id: 'ol-peacock', from: '07-01', to: '07-31', category: 'pest', title: 'Scout for peacock spot',
+          body: 'Maryland summer humidity is the foliar risk. Dark rings with pale halos, then defoliation. Keep the canopy open, avoid overhead watering, clear fallen leaves.' },
+        { id: 'ol-feed-off', from: '08-15', to: '08-15', category: 'feed', title: 'Feeding stops',
+          body: 'Hard stop. Excess nitrogen gives long soft shoots and no fruit — the same picture as inadequate chill.' },
+        { id: 'ol-harvest', from: '09-01', to: '10-31', category: 'measure', title: 'Harvest window',
+          body: 'Green harvest from September, purple and black through October. Bloom to harvest is 4-5 months; mature yield 2-5 lb.' },
+        { id: 'ol-in', from: '10-20', to: '11-15', category: 'move', title: 'Move indoors, ahead of a hard freeze',
+          body: 'Deep flush first. Then hold 50-55 F for 10-12 weeks, bright, dry and unfertilised, with a fan for air movement and humidity under 50%. Never below 40 F at pot level.' },
+        { id: 'ol-verify-space', from: '09-15', to: '10-15', category: 'system', title: 'Verify the winter space holds 50-55 F',
+          body: 'Put a thermometer in the candidate space and watch it through a cold snap BEFORE you need it. Too warm (65-72 F) and induction fails as surely as too cold.' }
+      ],
       name: 'Arbequina olive — container',
       scientific: "Olea europaea 'Arbequina' · young stem graft · ZIP 20833, zone 7b",
       setting: 'seasonal',

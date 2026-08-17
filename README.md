@@ -106,8 +106,9 @@ misread off a wet label from across the bench).
 - **what to watch** for that species, the full history, and the plant's own QR
   code.
 
-**Labels** prints the whole nursery as a QR label sheet. **Sync** keeps devices
-in step automatically. **Backup** exports and imports by hand.
+**Calendar** is every dated task across the nursery. **Labels** prints the whole
+nursery as a QR label sheet. **Sync** keeps devices in step automatically.
+**Backup** exports and imports by hand.
 
 ## What it tracks
 
@@ -210,6 +211,76 @@ any other, decides whether there is a crop.
 
 ---
 
+## The master calendar
+
+**Calendar** collects every dated window across the whole nursery — 46 of them,
+transcribed from the three handbooks — and sorts them into **Missed**, **Due
+now**, **Coming up** and **Done this year**. Each carries the plant it belongs
+to, its window, its category (move / prune / repot / feed / scout / measure /
+system) and the handbook's own wording for what to do.
+
+Marking one done is remembered **for that year only**, so it returns next
+season. A missed window nags for 45 days and then stops, rather than staying red
+forever. Completions sync between devices like any other record.
+
+Each plant's page also shows just its own **due now and next 30 days**.
+
+## The drip log
+
+Bench trees never need a watering entry typed. The app writes one for every
+scheduled run — date, volume, which recipe — and the plant's Drip card shows the
+programme in force.
+
+**These volumes are derived, not measured.** The GrowHub outlet is a smart
+switch: it reports on/off, and there is no public API to ask it anything anyway.
+So the volume is `emitters × flow × runtime` on the days the season's recipe
+runs, using the packet's own emitter allocation and seasonal runtimes.
+
+Two consequences worth being clear about:
+
+- **Calibrate, or the number is only nominal.** Until you enter a measured flow
+  rate the app uses the kit's nominal 0.7 L/hr per emitter, and says so on
+  screen and in every entry it writes. The catch-cup pass — lift the staked
+  lines into cups, manual-run exactly 2 minutes, mL ÷ 2 — gives you the real
+  figure per plant. Re-run it after any repot, substrate or line change.
+- **A clogged emitter still reads as watered.** Nothing here can see a blocked
+  dripper or a pump that did not start. The packet's 30-second daily glance is
+  what catches that, and it is not replaceable by software.
+
+The pomegranate's winter bypass is respected: while its lines are clamped
+nothing is logged, and the card tells you to hand-water every 7–10 days instead.
+
+Because the site is static there is nothing running overnight, so the log is
+caught up whenever you open the app. Entry ids are deterministic, which makes
+that idempotent — it re-runs on every render and syncs between two devices
+without ever double-counting.
+
+## The handbook forms
+
+The two tree handbooks carry eleven paper forms each, and the book adds its
+eight-block tree record. Most of them are already what this app stores, so
+rather than making you write every number twice:
+
+| Handbook form | Where it lives here |
+|---|---|
+| Care Log | every logged check |
+| Annual Growth Measurement | the growth series (trunk caliper) |
+| Winter Chill Log | the chill-hours series, with the 200–400 h band |
+| Media and Water Chemistry | the pH and EC series, with pour-through notes |
+| Pruning Record · Repot / Root-Prune Record | the work and health log |
+| Pest Scouting Log | pest sightings, with the species' own pest list |
+| Seasonal Transition Log | the move-in / move-out entries |
+| Tree Provenance Record | the plant's identity fields |
+| Targets block (book) | the care profile — bands, winter floor, light, EC |
+| Quarterly vigor audit (book) | the vigor 1–5 series |
+
+Still on paper, and worth keeping there for now: the phenology log (bud break,
+bloom, colour break), the harvest log, and the annual season review — which
+should be *generated* from a full year of data rather than typed, and will be
+once there is a full year to generate it from.
+
+---
+
 ## Sync, or the lack of it
 
 By default **readings are stored in this browser on this device** and are not
@@ -273,6 +344,7 @@ js/profiles.js      care profiles: tracked factors, target bands, watch lists
 js/store.js         plants, readings, merge and tombstones — the only storage code
 js/sync.js          optional Firestore sync over REST (no SDK, no CDN)
 js/charts.js        SVG charts, hover and keyboard readout, table views
+js/calendar.js      dated task windows and the derived drip log
 js/app.js           routing and views
 test/               verification, described below
 ```
@@ -299,6 +371,7 @@ pip install segno zxing-cpp numpy playwright pillow
 python3 test/verify_qr.py     # the QR encoder
 python3 test/smoke_app.py     # the app, in a real browser
 python3 test/sync_test.py     # two devices converging through sync
+python3 test/calendar_test.py # the calendar and the derived drip log
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
@@ -332,5 +405,12 @@ devices. It checks that a plant made on A reaches B, that a reading added on B
 reaches A without losing A's own, that a delete propagates and **stays** deleted
 when a stale device pushes an old snapshot back, and that losing the network
 leaves local data intact and recovers when it returns.
+
+`calendar_test.py` leans on the drip log, because it writes data nobody typed:
+the volume must match `emitters × flow × runtime`, it must never schedule a
+Sunday (the hand-watering day), it must stay bounded to 30 days of backfill so
+first use does not invent months of history, it must be idempotent across
+repeated renders, it must honour the pomegranate's winter clamp by logging
+nothing, and it must say plainly whether the flow rate is calibrated or nominal.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.
