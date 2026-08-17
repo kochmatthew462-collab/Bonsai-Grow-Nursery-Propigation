@@ -17,6 +17,7 @@
   var profiles = global.BonsaiProfiles;
   var sync = global.BonsaiSync;
   var calendar = global.BonsaiCalendar;
+  var weather = global.BonsaiWeather;
   var QR = global.BonsaiQR;
 
   var METRICS = profiles.metrics;
@@ -285,6 +286,8 @@
     if (monthCard) view.appendChild(monthCard);
     var tasks = plantTasksCard(plant, profile);
     if (tasks) view.appendChild(tasks);
+    var forecastCard = plantWeatherCard(plant, profile);
+    if (forecastCard) view.appendChild(forecastCard);
     view.appendChild(kpiRow(plant, profile, latest));
     var drip = dripCard(plant, profile);
     if (drip) view.appendChild(drip);
@@ -1115,10 +1118,38 @@
       })
     ]));
 
+    view.appendChild(weatherCard());
+
+    view.appendChild(h('div', { class: 'card no-print' }, [
+      h('h2', { text: 'Reminders on your phone' }),
+      h('p', {
+        class: 'hint',
+        text: 'Download every dated window as a calendar file and import or subscribe to it. Each becomes ' +
+          'a yearly repeating all-day event with an alarm the day before — which is the only way this app ' +
+          'can reach you while your phone is asleep, since there is no server anywhere in it.'
+      }),
+      h('div', { class: 'button-row' }, [
+        h('button', {
+          class: 'button button-primary', text: 'Download calendar (.ics)',
+          onclick: function () {
+            var pairs = store.listPlants().map(function (plant) {
+              return { plant: plant, profile: profiles.get(plant.profileId) };
+            }).filter(function (pair) { return (pair.profile.tasks || []).length; });
+            if (!pairs.length) {
+              global.alert('No plants with a care profile yet — nothing to export.');
+              return;
+            }
+            download('koch-tree-nursery.ics', calendar.toIcs(pairs, new Date()), 'text/calendar');
+          }
+        })
+      ])
+    ]));
+
     if (!items.length) {
       view.appendChild(h('div', { class: 'card' }, [
         h('p', { class: 'hint', text: 'Nothing scheduled — add a plant and give it a care profile.' })
       ]));
+      view.appendChild(weatherSettingsCard());
       return;
     }
 
@@ -1144,6 +1175,8 @@
       card.appendChild(list);
       view.appendChild(card);
     });
+
+    view.appendChild(weatherSettingsCard());
   }
 
   // Only what needs attention, on the plant's own page.
@@ -1223,6 +1256,196 @@
           }
         })
       ])
+    ]);
+  }
+
+  /* -------------------------------------------------------------- weather */
+
+  function alertBox(alert, plantName) {
+    return h('div', { class: 'alert', 'data-level': alert.level }, [
+      plantName ? h('div', { class: 'alert-plant', text: plantName }) : null,
+      h('div', { class: 'alert-title', text: alert.title }),
+      h('div', { class: 'alert-body', text: alert.detail })
+    ]);
+  }
+
+  // Plants whose profile actually has a move schedule.
+  function movingPlants() {
+    return store.listPlants().map(function (plant) {
+      return { plant: plant, profile: profiles.get(plant.profileId) };
+    }).filter(function (pair) { return !!pair.profile.transitions; });
+  }
+
+  function coldestThreshold(pairs) {
+    var lowest = null;
+    pairs.forEach(function (pair) {
+      var fall = pair.profile.transitions.fall;
+      if (lowest == null || fall.moveAtLow > lowest) lowest = fall.moveAtLow;
+    });
+    return lowest;
+  }
+
+  function forecastStrip(days, threshold) {
+    var strip = h('div', { class: 'forecast' });
+    days.slice(0, 10).forEach(function (day) {
+      strip.appendChild(h('div', {
+        class: 'forecast-day',
+        'data-cold': threshold != null && day.low <= threshold ? 'true' : 'false'
+      }, [
+        h('span', { class: 'd', text: weather.formatDay(day.date).replace(/,.*/, '') }),
+        h('span', { class: 'lo', text: Math.round(day.low) + '°' }),
+        h('span', { class: 'hi', text: 'hi ' + Math.round(day.high) + '°' })
+      ]));
+    });
+    return strip;
+  }
+
+  /**
+   * Weather is fetched, so this renders a placeholder and fills it in. Alerts
+   * are computed per plant against its own thresholds.
+   */
+  function weatherCard() {
+    var pairs = movingPlants();
+    var body = h('div', { class: 'watch-list' }, [
+      h('p', { class: 'hint', text: 'Loading forecast…' })
+    ]);
+    var config = weather.settings();
+
+    var card = h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'Weather watch' }),
+        h('span', { class: 'hint', text: config.label })
+      ]),
+      body
+    ]);
+
+    if (!pairs.length) {
+      body.textContent = '';
+      body.appendChild(h('p', {
+        class: 'hint',
+        text: 'No plants with a move schedule yet. The bergamot and olive profiles carry one.'
+      }));
+      return card;
+    }
+
+    weather.fetchForecast(false).then(function (forecast) {
+      body.textContent = '';
+      var now = new Date();
+      var any = false;
+
+      pairs.forEach(function (pair) {
+        var alert = weather.alertFor(pair.profile, forecast, now);
+        if (!alert) return;
+        any = true;
+        body.appendChild(alertBox(alert, pair.plant.name));
+        weather.notifyOnce(pair.plant, alert);
+      });
+
+      if (!any) {
+        body.appendChild(h('p', {
+          class: 'hint',
+          text: 'Nothing to act on: no forecast night crosses a move threshold, and no move window is within its acclimation lead time.'
+        }));
+      }
+
+      body.appendChild(forecastStrip(forecast.days, coldestThreshold(pairs)));
+      body.appendChild(h('p', {
+        class: 'hint',
+        text: 'Overnight lows, next 10 days. Fetched ' +
+          new Date(forecast.fetchedAt).toLocaleTimeString() + ' from Open-Meteo. ' +
+          'Highlighted nights are at or below the warmest move-in threshold among your trees.'
+      }));
+    }).catch(function (error) {
+      body.textContent = '';
+      body.appendChild(h('p', {
+        class: 'hint',
+        text: 'Could not load the forecast: ' + error.message +
+          ' Your readings and calendar are unaffected.'
+      }));
+    });
+
+    return card;
+  }
+
+  function weatherSettingsCard() {
+    var config = weather.settings();
+    var lat = h('input', { type: 'number', name: 'latitude', step: '0.01', value: config.latitude });
+    var lon = h('input', { type: 'number', name: 'longitude', step: '0.01', value: config.longitude });
+    var label = h('input', { type: 'text', name: 'label', value: config.label });
+    var notify = h('input', { type: 'checkbox', name: 'notify', checked: config.notify });
+    var status = h('p', { class: 'hint' });
+
+    return h('div', { class: 'card no-print' }, [
+      h('h2', { text: 'Location and alerts' }),
+      h('div', { class: 'field-grid' }, [
+        field('Latitude', lat),
+        field('Longitude', lon),
+        field('Label', label, 'Only for display')
+      ]),
+      h('label', { class: 'checkbox' }, [notify, document.createTextNode('Raise a system notification when an alert appears')]),
+      h('p', {
+        class: 'hint',
+        text: 'A site with no server cannot wake a sleeping phone. Notifications fire while the app is ' +
+          'open or when you open it — once per alert per day, so it does not nag. For reminders that ' +
+          'reach you with the phone asleep, use the calendar file below: your own calendar app fires ' +
+          'those in the background, free, with nothing running anywhere.'
+      }),
+      h('div', { class: 'button-row' }, [
+        h('button', {
+          class: 'button button-primary', text: 'Save and refresh',
+          onclick: function () {
+            weather.setSettings({
+              latitude: Number(lat.value), longitude: Number(lon.value),
+              label: label.value, notify: notify.checked
+            });
+            if (notify.checked && weather.canNotify()) {
+              weather.requestPermission().then(function () { render(); });
+            } else {
+              render();
+            }
+          }
+        }),
+        h('button', {
+          class: 'button', text: 'Refresh forecast now',
+          onclick: function () { weather.fetchForecast(true).then(render).catch(function () { render(); }); }
+        })
+      ]),
+      status
+    ]);
+  }
+
+  // Per-plant alert, on its own page.
+  function plantWeatherCard(plant, profile) {
+    if (!profile.transitions) return null;
+    var body = h('div', { class: 'watch-list' }, [h('p', { class: 'hint', text: 'Loading forecast…' })]);
+    weather.fetchForecast(false).then(function (forecast) {
+      body.textContent = '';
+      var alert = weather.alertFor(profile, forecast, new Date());
+      if (alert) {
+        body.appendChild(alertBox(alert, null));
+        weather.notifyOnce(plant, alert);
+      } else {
+        body.appendChild(h('p', { class: 'hint', text: 'No move action indicated by the current forecast.' }));
+      }
+      body.appendChild(forecastStrip(forecast.days, profile.transitions.fall.moveAtLow));
+    }).catch(function (error) {
+      body.textContent = '';
+      body.appendChild(h('p', { class: 'hint', text: 'Forecast unavailable: ' + error.message }));
+    });
+
+    var t = profile.transitions;
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'Weather watch' }),
+        h('a', { class: 'hint', href: '#/calendar', text: 'settings' })
+      ]),
+      h('p', {
+        class: 'hint',
+        text: 'In ' + t.fall.window[0] + ' to ' + t.fall.window[1] + ' (or sooner at ' + t.fall.moveAtLow +
+          ' °F nights) · out ' + t.spring.window[0] + ' to ' + t.spring.window[1] + ' (nights above ' +
+          t.spring.moveAboveLow + ' °F) · ' + t.acclimationDays + '-day acclimation each way.'
+      }),
+      body
     ]);
   }
 

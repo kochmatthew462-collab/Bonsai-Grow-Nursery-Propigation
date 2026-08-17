@@ -235,6 +235,95 @@
     return made;
   }
 
+
+  /* --------------------------------------------------------------- export */
+
+  // RFC 5545 wants lines folded at 75 octets, continued with a leading space.
+  function fold(line) {
+    if (line.length <= 74) return line;
+    var out = [line.slice(0, 74)];
+    var rest = line.slice(74);
+    while (rest.length > 73) {
+      out.push(' ' + rest.slice(0, 73));
+      rest = rest.slice(73);
+    }
+    if (rest.length) out.push(' ' + rest);
+    return out.join('\r\n');
+  }
+
+  function escapeText(value) {
+    return String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\r?\n/g, '\\n');
+  }
+
+  function stamp(date) {
+    return date.getUTCFullYear() +
+      String(date.getUTCMonth() + 1).padStart(2, '0') +
+      String(date.getUTCDate()).padStart(2, '0') + 'T' +
+      String(date.getUTCHours()).padStart(2, '0') +
+      String(date.getUTCMinutes()).padStart(2, '0') +
+      String(date.getUTCSeconds()).padStart(2, '0') + 'Z';
+  }
+
+  function dateValue(date) {
+    return date.getFullYear() +
+      String(date.getMonth() + 1).padStart(2, '0') +
+      String(date.getDate()).padStart(2, '0');
+  }
+
+  /**
+   * A subscribable calendar of every dated window, as yearly-recurring all-day
+   * events with a one-day-ahead alarm.
+   *
+   * This is the only part of the app that can reach you with the phone asleep:
+   * your calendar app fires these itself, with no server involved. Weather
+   * alerts cannot work this way — they depend on a forecast that does not exist
+   * yet — which is why they only appear while the app is open.
+   */
+  function toIcs(plantsWithProfiles, now) {
+    var created = now || new Date();
+    var lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Koch\'s Tree Nursery Tracker//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Tree nursery'
+    ];
+
+    plantsWithProfiles.forEach(function (pair) {
+      var plant = pair.plant;
+      var profile = pair.profile;
+      (profile.tasks || []).forEach(function (task) {
+        var win = windowFor(task, created.getFullYear());
+        // DTEND on an all-day event is exclusive, so add a day to the last one.
+        var end = new Date(win.end.getTime() + 1);
+        lines.push('BEGIN:VEVENT');
+        lines.push('UID:' + plant.id + '-' + task.id + '@koch-nursery');
+        lines.push('DTSTAMP:' + stamp(created));
+        lines.push('DTSTART;VALUE=DATE:' + dateValue(win.start));
+        lines.push('DTEND;VALUE=DATE:' + dateValue(end));
+        lines.push('RRULE:FREQ=YEARLY');
+        lines.push(fold('SUMMARY:' + escapeText(plant.name + ' — ' + task.title)));
+        lines.push(fold('DESCRIPTION:' + escapeText(
+          task.body + '\n\n' + profile.name + ' · ' + (profile.source || 'handbook'))));
+        lines.push('CATEGORIES:' + escapeText(CATEGORY_LABELS[task.category] || task.category));
+        lines.push('BEGIN:VALARM');
+        lines.push('TRIGGER:-P1D');
+        lines.push('ACTION:DISPLAY');
+        lines.push(fold('DESCRIPTION:' + escapeText(plant.name + ' — ' + task.title)));
+        lines.push('END:VALARM');
+        lines.push('END:VEVENT');
+      });
+    });
+
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+  }
+
   global.BonsaiCalendar = {
     tasksForPlant: tasksForPlant,
     sortTasks: sortTasks,
@@ -242,6 +331,7 @@
     dripOn: dripOn,
     dripSummary: dripSummary,
     backfillDrip: backfillDrip,
+    toIcs: toIcs,
     isoDay: isoDay
   };
 })(window);
