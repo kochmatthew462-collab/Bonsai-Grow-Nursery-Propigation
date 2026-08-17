@@ -14,6 +14,7 @@ shaped like the step can save the project once, atomically, at the end.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ from .models import (
     Appraisal, AppraisalItem, Author, Claim, EvidenceLevel, Extraction, Project,
     SupportType, Work, WorkType,
 )
-from .sources import gov, importers, scholarly  # noqa: F401  (registers sources)
+from .sources import fulltext, gov, importers, scholarly  # noqa: F401
 from .sources.base import REGISTRY, Fetcher
 from .writing import (
     draft as draft_module, integrity, proof as proof_module,
@@ -648,7 +649,28 @@ async def export(
     if slides:
         context.reset_group_state()
         path = out / f"{project.project_id}-slides.pptx"
-        deck_module.build_deck(project, context, str(path))
+        # The same attached figures the paper gets. `deck.figure_slide` builds a
+        # proper APA figure slide — number, italic title, note beneath — and was
+        # never passed anything, so every deck came out with no figures in it
+        # while the interface said otherwise.
+        deck_figures = []
+        for index, attached in enumerate(
+                (getattr(project, "notes", None) or {}).get("figures", []), 1):
+            image = out / str(attached.get("path", ""))
+            if not image.exists():
+                continue
+            deck_figures.append(deck_module.Slide(
+                title=str(attached.get("title") or f"Figure {index}"),
+                figure_path=str(image),
+                figure_number=index,
+                figure_title=str(attached.get("title") or ""),
+                figure_note=str(attached.get("note")
+                                or attached.get("caption") or ""),
+                speaker_notes=_figure_speaker_notes(attached, index),
+                kind="figure",
+            ))
+        deck_module.build_deck(project, context, str(path),
+                               figures=deck_figures, font=chosen_font)
         written.append({"kind": "slides", "name": path.name})
 
     return {"exported": written, "blockers": blockers,
@@ -689,8 +711,79 @@ async def level_figure(project_id: str) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     figure = figures_module.level_distribution_figure(
         counts, path=out / "figure-levels.png")
+    # Attached like every other figure. It was not, and the difference was
+    # invisible: the chart appeared on screen, and then was silently absent
+    # from the exported paper because only `/figure` wrote to the ledger.
+    _attach_figure(project, figure, kind="levels",
+                   title="Distribution of evidence levels",
+                   caption="Levels assigned to the included studies.")
     return {"path": Path(figure.path).name, "note": figure.note,
+            "attached": True,
+            "placement": ("Attached to the project. The exporter places it in "
+                          "the paper as a numbered APA figure with its note "
+                          "beneath, and on a slide in the deck."),
             "table": {"headers": figure.data_table[0], "rows": figure.data_table[1]}}
+
+
+def _figure_speaker_notes(attached: dict[str, Any], index: int) -> str:
+    """What to say while the figure is on screen, in complete sentences.
+
+    Speaker notes are prose, not the bullets again. These name the figure, say
+    what it plots, and — where the figure has an underlying table — give the
+    range so the presenter has the numbers without reading them off the slide.
+    Nothing here is invented: every sentence is built from the figure's own
+    data table and its APA note.
+    """
+    title = str(attached.get("title") or f"Figure {index}")
+    lines = [f"Figure {index}, {title}, is on screen now."]
+
+    note = str(attached.get("note") or "").strip()
+    if note:
+        lines.append(note if note.endswith(".") else note + ".")
+
+    data = attached.get("table") or {}
+    rows = data.get("rows") or []
+    headers = data.get("headers") or []
+    if rows and headers:
+        lines.append(
+            f"The figure plots {len(rows)} "
+            f"{'entry' if len(rows) == 1 else 'entries'} across "
+            f"{len(headers)} column{'' if len(headers) == 1 else 's'}: "
+            + ", ".join(str(h) for h in headers) + ".")
+        first = ", ".join(str(cell) for cell in rows[0])
+        lines.append(f"The first row reads: {first}.")
+
+    caption = str(attached.get("caption") or "").strip()
+    if caption:
+        lines.append(caption if caption.endswith(".") else caption + ".")
+
+    lines.append(
+        "State the source aloud when you present a figure drawn from another "
+        "author's data, and keep the in-text citation on the slide itself — an "
+        "audience cannot see your notes.")
+    return "\n".join(lines)
+
+
+def _attach_figure(project: Project, figure, *, kind: str, title: str,
+                   caption: str = "") -> str:
+    """Record a built figure on the project so the exporter can place it.
+
+    One function rather than two copies, because the two copies had drifted:
+    the general figure route attached and the evidence-level route did not.
+    """
+    if not isinstance(getattr(project, "notes", None), dict):
+        project.notes = {}
+    stored = project.notes.setdefault("figures", [])
+    name = Path(figure.path).name
+    stored[:] = [f for f in stored if f.get("path") != name]
+    stored.append({
+        "path": name, "kind": kind, "title": title or kind.title(),
+        "caption": caption, "note": figure.note,
+        "table": {"headers": figure.data_table[0],
+                  "rows": figure.data_table[1]} if figure.data_table else None,
+    })
+    STORE.save(project)
+    return name
 
 
 
@@ -799,18 +892,8 @@ async def build_figure(project_id: str,
         raise HTTPException(400, f"Could not build the figure: {error}")
 
     # Attach it so the exporter can place it in the paper as an APA figure.
-    if not isinstance(getattr(project, "notes", None), dict):
-        project.notes = {}
-    stored = project.notes.setdefault("figures", [])
-    name = Path(figure.path).name
-    stored[:] = [f for f in stored if f.get("path") != name]
-    stored.append({
-        "path": name, "kind": kind, "title": title or kind.title(),
-        "caption": caption, "note": figure.note,
-        "table": {"headers": figure.data_table[0],
-                  "rows": figure.data_table[1]} if figure.data_table else None,
-    })
-    STORE.save(project)
+    name = _attach_figure(project, figure, kind=kind, title=title,
+                          caption=caption)
 
     return {
         "path": name, "note": figure.note,
@@ -1002,6 +1085,257 @@ async def journal_check(project_id: str,
         title=str(getattr(title_page, "title", "") or "") if title_page else "",
         keywords=list(getattr(project, "keywords", None) or []),
     )
+
+
+# ----------------------------------------------------------------- full text
+
+
+@app.get("/api/fulltext/status")
+async def fulltext_status() -> dict[str, Any]:
+    available, reason = fulltext.pypdf_probe()
+    return {
+        "pdf": available,
+        "note": (
+            "PDFs can be read." if available else
+            f"{reason} PDFs cannot be parsed here. Paste the text instead — "
+            f"everything downstream works the same way. To turn PDF reading "
+            f"on: pip install pypdf."
+        ),
+        "limits": [
+            "A scanned PDF has no text layer. It needs OCR first; nothing here "
+            "can read an image of a page.",
+            "Two-column layouts sometimes interleave when extracted. Check a "
+            "passage before you cite it — the anchor tells you where to look.",
+            "Extraction reads patterns, not meaning. Every value it returns "
+            "carries the sentence it came from so you can check it in seconds.",
+        ],
+    }
+
+
+def _fulltext_summary(entry: dict[str, Any]) -> dict[str, Any]:
+    passages = entry.get("passages") or []
+    return {
+        "work_key": entry.get("work_key", ""),
+        "label": entry.get("label", ""),
+        "pages": entry.get("pages", 0),
+        "passages": len(passages),
+        "source": entry.get("source", ""),
+        "ingested_at": entry.get("ingested_at", ""),
+        "words": sum(len(str(p.get("text", "")).split()) for p in passages),
+    }
+
+
+@app.get("/api/projects/{project_id}/fulltext")
+async def list_fulltext(project_id: str) -> dict[str, Any]:
+    project = _load(project_id)
+    store = STORE.load_fulltext(project.project_id)
+    ingested = [_fulltext_summary(entry) for entry in store.values()]
+    ingested.sort(key=lambda row: row["work_key"])
+    return {
+        "ingested": ingested,
+        "missing": [{"key": w.key, "label": w.short_label()}
+                    for w in project.included_works() if w.key not in store],
+        "pdf": fulltext.pypdf_available(),
+    }
+
+
+@app.post("/api/projects/{project_id}/fulltext")
+async def ingest_fulltext(
+    project_id: str,
+    work_key: str = Form(...),
+    file: UploadFile | None = File(None),
+    text: str = Form(""),
+) -> dict[str, Any]:
+    """Read a source's full text into anchored paragraphs.
+
+    A PDF or pasted text, both ending in the same structure: a list of passages
+    each carrying its page and paragraph number. That anchor is what lets a
+    claim point back at the exact paragraph it came from, which is the whole
+    reason this step exists.
+
+    The file is read into memory and discarded. Nothing is copied into the data
+    directory — a published article on disk in two places is a licensing
+    problem, and the passages are all that is needed afterwards.
+    """
+    project = _load(project_id)
+    work = project.work(work_key)
+    if work is None:
+        raise HTTPException(404, f"no source with key {work_key}")
+
+    if file is not None and file.filename:
+        body = await file.read()
+        if len(body) > 40 * 1024 * 1024:
+            raise HTTPException(413, "That file is larger than 40 MB.")
+        if file.filename.lower().endswith(".pdf"):
+            import tempfile as _tempfile
+            handle, temporary = _tempfile.mkstemp(suffix=".pdf")
+            try:
+                with os.fdopen(handle, "wb") as stream:
+                    stream.write(body)
+                result = fulltext.read_pdf(Path(temporary), work_key=work_key)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+            source = f"PDF: {file.filename}"
+        else:
+            result = fulltext.read_text(body.decode("utf-8", "replace"),
+                                        work_key=work_key)
+            source = f"Text file: {file.filename}"
+    elif text.strip():
+        result = fulltext.read_text(text, work_key=work_key)
+        source = "Pasted text"
+    else:
+        raise HTTPException(400, "Upload a PDF or paste the text.")
+
+    if not result["passages"]:
+        return {"ok": False, "note": result["note"], "passages": 0}
+
+    store = STORE.load_fulltext(project.project_id)
+    store[work_key] = {
+        "work_key": work_key,
+        "label": work.short_label(),
+        "pages": result["pages"],
+        "passages": result["passages"],
+        "source": source,
+        "ingested_at": storage._now(),
+    }
+    STORE.save_fulltext(project.project_id, store)
+    return {"ok": True, "note": result["note"],
+            "summary": _fulltext_summary(store[work_key]),
+            "sections": sorted({p.get("section", "") for p in result["passages"]
+                                if p.get("section")})}
+
+
+@app.delete("/api/projects/{project_id}/fulltext/{work_key}")
+async def drop_fulltext(project_id: str, work_key: str) -> dict[str, Any]:
+    project = _load(project_id)
+    store = STORE.load_fulltext(project.project_id)
+    removed = store.pop(work_key, None) is not None
+    if removed:
+        STORE.save_fulltext(project.project_id, store)
+    return {"removed": removed}
+
+
+@app.post("/api/projects/{project_id}/fulltext/{work_key}/extract")
+async def extract_fulltext(project_id: str, work_key: str,
+                           apply: bool = Body(False, embed=True)) -> dict[str, Any]:
+    """Read evidence-matrix fields out of an ingested source.
+
+    With `apply`, the findings are written into the extraction row — but only
+    into cells that are still empty. Anything typed by hand wins, because a
+    pattern match is a first draft of a matrix row and a human reading is the
+    final one.
+    """
+    project = _load(project_id)
+    if project.work(work_key) is None:
+        raise HTTPException(404, f"no source with key {work_key}")
+    entry = STORE.load_fulltext(project.project_id).get(work_key)
+    if entry is None:
+        raise HTTPException(404, "No full text has been ingested for that "
+                                 "source yet.")
+    passages = fulltext.passages_from_dicts(entry.get("passages") or [])
+    result = fulltext.extract(passages)
+
+    if apply:
+        existing = next((e for e in project.extractions
+                         if e.work_key == work_key), None)
+        if existing is None:
+            existing = Extraction(work_key=work_key)
+            project.extractions.append(existing)
+        fields = result["fields"]
+
+        def first(name: str) -> str:
+            rows = fields.get(name) or []
+            return str(rows[0]["value"]) if rows else ""
+
+        def joined(name: str, limit: int = 6) -> str:
+            rows = fields.get(name) or []
+            seen: list[str] = []
+            for row in rows:
+                value = str(row["value"])
+                if value not in seen:
+                    seen.append(value)
+            return "; ".join(seen[:limit])
+
+        suggested = result.get("suggested_sample_size")
+        candidates = {
+            "design": first("design"),
+            "sample_size": str(suggested["value"]) if suggested else "",
+            "statistics": joined("statistics", 8),
+            "limitations": first("limitations"),
+        }
+        filled: list[str] = []
+        for name, value in candidates.items():
+            if value and not getattr(existing, name, ""):
+                setattr(existing, name, value)
+                filled.append(name.replace("_", " "))
+        STORE.save(project)
+        result["applied"] = filled
+        result["applied_note"] = (
+            "Filled: " + ", ".join(filled) + ". Only empty cells were written "
+            "to — anything already typed was left alone. Check each one against "
+            "the sentence it came from before you rely on it."
+            if filled else
+            "Nothing was written: every cell this could fill already had "
+            "something in it."
+        )
+
+    result["work_key"] = work_key
+    result["anchor_source"] = entry.get("source", "")
+    return result
+
+
+@app.post("/api/projects/{project_id}/locate")
+async def locate_sentence(project_id: str,
+                          sentence: str = Body(..., embed=True),
+                          work_key: str = Body("", embed=True)) -> dict[str, Any]:
+    """Find which ingested paragraph a sentence came from."""
+    project = _load(project_id)
+    store = STORE.load_fulltext(project.project_id)
+    entries = ([store[work_key]] if work_key and work_key in store
+               else list(store.values()))
+    passages: list[Any] = []
+    for entry in entries:
+        passages.extend(fulltext.passages_from_dicts(entry.get("passages") or []))
+    matches = fulltext.locate(sentence, passages)
+    labels = {entry["work_key"]: entry.get("label", entry["work_key"])
+              for entry in store.values()}
+    for match in matches:
+        match["label"] = labels.get(match.get("work_key", ""), "")
+    return {
+        "matches": matches,
+        "searched": len(passages),
+        "note": ("Nothing in the ingested full text matches this sentence "
+                 "closely enough to anchor it."
+                 if not matches and passages else
+                 "No full text has been ingested yet, so there was nothing to "
+                 "search." if not passages else ""),
+    }
+
+
+@app.get("/api/projects/{project_id}/grounding")
+async def grounding_report(project_id: str) -> dict[str, Any]:
+    """Anchor every claim to the paragraph of the source it cites.
+
+    This is the check that makes the claim ledger mean something. A claim whose
+    cited source does not contain it is either attributed to the wrong work or
+    was never in any work — and both look identical in a finished draft.
+    """
+    project = _load(project_id)
+    store = STORE.load_fulltext(project.project_id)
+    passages: list[Any] = []
+    for entry in store.values():
+        passages.extend(fulltext.passages_from_dicts(entry.get("passages") or []))
+    claims = [storage._to_jsonable(c) for c in project.claims]
+    report = fulltext.ground(claims, passages)
+    labels = {entry["work_key"]: entry.get("label", entry["work_key"])
+              for entry in store.values()}
+    for row in report["claims"]:
+        for match in row["matches"]:
+            match["label"] = labels.get(match.get("work_key", ""), "")
+    report["ingested"] = sorted(store.keys())
+    report["cited"] = sorted({k for c in project.claims for k in c.work_keys})
+    report["not_ingested"] = sorted(set(report["cited"]) - set(report["ingested"]))
+    return report
 
 
 # ------------------------------------------------------------------- helpers

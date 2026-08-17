@@ -366,6 +366,29 @@ def test_charting_routes_are_reachable_from_the_ui() -> None:
     check("no charting route is orphaned from the UI", orphaned, [])
 
 
+# Routes the browser reaches without any script asking for them: the shell
+# itself, and a health check meant for the terminal.
+NOT_CALLED_BY_SCRIPT = {"/", "/healthz", "/static", "/api/config"}
+
+
+def test_research_routes_are_reachable_from_the_ui() -> None:
+    """The same check on the research side, where it was not being run.
+
+    Extending it found seven endpoints with no caller — among them the entire
+    figure generator, which is a feature of the specification rather than a
+    loose end. An endpoint nobody can reach is indistinguishable from one that
+    was never built, and it passes every other test in this suite.
+    """
+    called = _client_paths()
+    orphaned = sorted(
+        p for p in _server_paths()
+        if not p.startswith("/api/charting")
+        and p not in NOT_CALLED_BY_SCRIPT
+        and not any(_covers(p, c) for c in called)
+    )
+    check("no research route is orphaned from the UI", orphaned, [])
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

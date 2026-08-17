@@ -137,6 +137,48 @@ class ProjectStore:
         path.rename(backup)
         return True
 
+    # ------------------------------------------------------------- full text
+
+    # Ingested PDFs live beside the project rather than inside it. A single
+    # 30-page article is a few hundred paragraphs, and folding a dozen of them
+    # into the project file would mean rewriting several megabytes every time a
+    # checkbox changes — and would make the one file that holds the literature
+    # set slow to load and awkward to inspect by hand.
+
+    def fulltext_path(self, project_id: str) -> Path:
+        directory = self.directory / "fulltext"
+        directory.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9._-]", "", project_id)
+        if not safe or safe in (".", ".."):
+            raise ValueError(f"unsafe project id {project_id!r}")
+        return directory / f"{safe}.json"
+
+    def load_fulltext(self, project_id: str) -> dict[str, Any]:
+        path = self.fulltext_path(project_id)
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text("utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return payload.get("works", {}) if isinstance(payload, dict) else {}
+
+    def save_fulltext(self, project_id: str, works: dict[str, Any]) -> Path:
+        path = self.fulltext_path(project_id)
+        payload = {"schema_version": SCHEMA_VERSION, "saved_at": _now(),
+                   "works": works}
+        handle, temporary = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                json.dump(payload, stream, indent=2, ensure_ascii=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+        return path
+
     # -------------------------------------------------------- writing samples
 
     def save_sample(self, name: str, text: str) -> Path:

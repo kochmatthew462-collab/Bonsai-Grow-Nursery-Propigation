@@ -722,6 +722,41 @@ def test_parser_invents_nothing() -> None:
     check("no statements invented", profile.required_statements, [])
 
 
+def test_a_structured_abstract_stated_as_a_sentence_is_found() -> None:
+    """The commonest way a journal says it, and the parser missed all of it.
+
+    Only headings typeset with their own colon were detected, so guidelines
+    that name the sections in a sentence came back "not structured" — and an
+    unstructured abstract sent to a journal that requires structure is a desk
+    rejection before anyone reads the paper.
+    """
+    profile = journals.parse(
+        "Abstracts are limited to 250 words and must be structured with "
+        "Background, Methods, Results and Conclusions. A maximum of 40 "
+        "references is permitted.")
+    check("structured", profile.abstract_structured, True)
+    check("headings", profile.abstract_headings,
+          ["Background", "Methods", "Results", "Conclusions"])
+    check("the other fields still parse", profile.abstract_limit, 250)
+
+
+def test_semicolon_separated_headings_are_found_too() -> None:
+    profile = journals.parse(
+        "The abstract must be structured: Aims; Design; Methods; Results; "
+        "Conclusion.")
+    check("structured", profile.abstract_structured, True)
+    check("headings", profile.abstract_headings,
+          ["Aims", "Design", "Methods", "Results", "Conclusion"])
+
+
+def test_two_section_words_in_prose_are_not_a_structured_abstract() -> None:
+    """Three in a run is a specification; two is an ordinary sentence."""
+    profile = journals.parse(
+        "The abstract should summarise the Methods and Results of the study.")
+    check("not structured", profile.abstract_structured, False)
+    check("no headings claimed", profile.abstract_headings, [])
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

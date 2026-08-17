@@ -18,6 +18,14 @@ lxml>=5.0                       # raw OOXML for page-number fields and running h
                                 # (python-docx depends on it; pinned here because
                                 #  apa/ooxml.py uses it directly)
 
+# --- full text ---
+pypdf>=4.0,<7                   # reads PDFs into anchored paragraphs
+# Imported lazily behind a guard in app/sources/fulltext.py, and that guard
+# catches more than ImportError on purpose: pypdf pulls in `cryptography` for
+# encrypted files, and a broken build of it aborts in Rust rather than raising.
+# Without pypdf you lose PDF parsing and keep pasted text, which is the right
+# thing to lose — everything downstream works identically either way.
+
 # --- figures and tables ---
 matplotlib>=3.8,<4              # APA figures, rendered headless
 numpy>=1.26,<3

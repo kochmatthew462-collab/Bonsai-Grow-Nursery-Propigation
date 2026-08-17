@@ -307,6 +307,17 @@ class Work:
             self.key = self.fingerprint()
         return self.key
 
+    def short_label(self) -> str:
+        """"Smith (2023)" — how a source is named on screen and in a report.
+
+        Not a citation: it has no formatting rules to honour and never stands in
+        for one. It exists so a list of sources reads like something a person
+        would say out loud, rather than like a list of keys.
+        """
+        name = self.first_author_surname() or (self.title[:40] or "Untitled")
+        year = self.year or "n.d."
+        return f"{name} ({year})"
+
     def first_author_surname(self) -> str:
         if self.authors:
             return self.authors[0].intext_name()

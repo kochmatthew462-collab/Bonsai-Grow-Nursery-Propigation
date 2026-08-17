@@ -148,6 +148,7 @@ function render() {
     question: viewQuestion,
     sources: viewSources,
     screen: viewScreen,
+    fulltext: viewFulltext,
     appraise: viewAppraise,
     write: viewWrite,
     check: viewCheck,
@@ -438,8 +439,227 @@ function viewScreen() {
           render();
         }),
       }, 'Save screening decisions'),
-      el('button', { class: 'button button-quiet', onclick: () => go('appraise') },
-        'Next: appraise →')));
+      el('button', { class: 'button button-quiet', onclick: () => go('fulltext') },
+        'Next: full text →')));
+}
+
+/* ----------------------------------------------------------------- full text */
+
+const fulltextState = { extractions: {} };
+
+function viewFulltext() {
+  const project = state.project;
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
+
+  const refresh = () => {
+    api(`/api/projects/${project.project_id}/fulltext`).then((data) => {
+      host.replaceChildren();
+
+      if (!data.pdf) {
+        host.append(notice('PDFs cannot be parsed on this machine — pypdf did '
+          + 'not load. Paste the text of each article instead; everything '
+          + 'downstream is identical either way. To turn PDF reading on: '
+          + 'pip install pypdf.', 'warn'));
+      }
+
+      host.append(card(`Ingested (${data.ingested.length})`,
+        data.ingested.length
+          ? el('div', { class: 'table-wrap' }, el('table', {},
+            el('thead', {}, el('tr', {}, ['Source', 'Pages', 'Paragraphs', 'Words', 'From', '']
+              .map((h) => el('th', {}, h)))),
+            el('tbody', {}, data.ingested.map((row) => el('tr', {},
+              el('td', {}, row.label || row.work_key),
+              el('td', {}, row.pages),
+              el('td', {}, row.passages),
+              el('td', {}, row.words),
+              el('td', {}, el('span', { class: 'hint' }, row.source)),
+              el('td', {},
+                el('button', {
+                  class: 'button button-quiet',
+                  onclick: () => guard(async () => {
+                    fulltextState.extractions[row.work_key] = await post(
+                      `/api/projects/${project.project_id}/fulltext/${encodeURIComponent(row.work_key)}/extract`,
+                      { apply: false });
+                    refresh();
+                  }),
+                }, 'Read it'),
+                el('button', {
+                  class: 'button button-quiet',
+                  onclick: () => guard(async () => {
+                    await api(
+                      `/api/projects/${project.project_id}/fulltext/${encodeURIComponent(row.work_key)}`,
+                      { method: 'DELETE' });
+                    delete fulltextState.extractions[row.work_key];
+                    toast('Removed.');
+                    refresh();
+                  }),
+                }, 'Remove')))))))
+          : el('p', { class: 'hint' }, 'Nothing ingested yet. Until a source’s '
+            + 'full text is here, its claims cannot be anchored to it and the '
+            + 'Check screen will say so rather than pass them.')));
+
+      for (const row of data.ingested) {
+        const extracted = fulltextState.extractions[row.work_key];
+        if (extracted) host.append(extractionCard(row, extracted, refresh));
+      }
+
+      const pending = data.missing;
+      if (pending.length) {
+        const select = el('select', {}, pending.map((w) =>
+          el('option', { value: w.key }, w.label)));
+        const fileInput = el('input', { type: 'file', accept: '.pdf,.txt,.text' });
+        const textInput = el('textarea', {
+          rows: 6,
+          placeholder: '…or paste the article text here. Keep the headings on '
+            + 'their own lines — that is how Methods and Results get told apart.',
+        });
+        host.append(card(`Add full text (${pending.length} source${pending.length === 1 ? '' : 's'} without it)`,
+          field('Source', select),
+          field('PDF or text file', fileInput,
+            data.pdf ? 'The file is read and discarded. Nothing is copied into '
+              + 'the data directory.'
+              : 'PDF parsing is unavailable here — a .txt file still works.'),
+          field('Or paste the text', textInput),
+          el('button', {
+            class: 'button',
+            onclick: () => guard(async () => {
+              const form = new FormData();
+              form.append('work_key', select.value);
+              if (fileInput.files && fileInput.files[0]) {
+                form.append('file', fileInput.files[0]);
+              }
+              form.append('text', textInput.value);
+              const out = await api(
+                `/api/projects/${project.project_id}/fulltext`,
+                { method: 'POST', body: form });
+              toast(out.note, !out.ok);
+              if (out.ok) { textInput.value = ''; fileInput.value = ''; refresh(); }
+            }),
+          }, 'Read this source')));
+      }
+
+      if (data.ingested.length) host.append(locateCard());
+      host.append(capabilityCard());
+
+      host.append(el('button', { class: 'button button-quiet', onclick: () => go('appraise') },
+        'Next: appraise →'));
+    }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+  };
+  refresh();
+
+  return el('section', { class: 'stack' },
+    el('h1', {}, 'Full text'),
+    notice('Reading a source’s full text does two things. It lets the evidence '
+      + 'matrix be filled from the article rather than from its abstract — '
+      + 'sample size, design, analysis and results, each with the page and the '
+      + 'sentence it came from. And it lets every claim you write be anchored '
+      + 'to the paragraph it came out of, so a sentence attributed to a source '
+      + 'that does not contain it can be caught before a marker catches it.'),
+    notice('This is a reader, not a model. It reports patterns it matched and '
+      + 'never fills a cell it cannot point at, because a plausible unsourced '
+      + 'number in a matrix is worse than an empty one: the empty cell gets '
+      + 'checked.'),
+    host);
+}
+
+function locateCard() {
+  const project = state.project;
+  const input = el('textarea', {
+    rows: 3,
+    placeholder: 'Paste a sentence from your draft to find the paragraph it '
+      + 'came from.',
+  });
+  const results = el('div', { class: 'stack' });
+
+  return card('Where did this sentence come from?',
+    el('p', { class: 'hint' }, 'The same check the Check screen runs over the '
+      + 'whole claim ledger, on one sentence at a time — useful while you are '
+      + 'still writing it.'),
+    field('Sentence', input),
+    el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        const out = await post(`/api/projects/${project.project_id}/locate`,
+          { sentence: input.value });
+        results.replaceChildren();
+        if (out.note) results.append(notice(out.note, 'warn'));
+        if (!out.matches.length) return;
+        results.append(el('div', { class: 'table-wrap' }, el('table', {},
+          el('thead', {}, el('tr', {}, ['Source', 'Where', 'Match', 'The paragraph']
+            .map((h) => el('th', {}, h)))),
+          el('tbody', {}, out.matches.map((match) => el('tr', {},
+            el('td', {}, match.label || match.work_key),
+            el('td', {}, el('code', { class: 'anchor' }, match.anchor),
+              match.section ? el('span', { class: 'hint' }, ` ${match.section}`) : null),
+            el('td', {}, chip(match.basis,
+              match.basis === 'verbatim' ? 'bad'
+                : match.basis === 'close paraphrase' ? 'good' : 'warn')),
+            el('td', {}, el('span', { class: 'quoted-source' }, match.excerpt))))))));
+      }),
+    }, 'Find it'),
+    results);
+}
+
+function capabilityCard() {
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Checking…'));
+  api('/api/fulltext/status').then((status) => {
+    host.replaceChildren(
+      notice(status.note, status.pdf ? 'good' : 'warn'),
+      el('h3', {}, 'What this cannot do'),
+      el('ul', { class: 'plain-list' },
+        status.limits.map((line) => el('li', {}, line))));
+  }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+  return card('Reading PDFs', host);
+}
+
+function extractionCard(row, extracted, refresh) {
+  const project = state.project;
+  const fields = extracted.fields || {};
+  const order = ['design', 'analysis', 'sample_size', 'response_rate',
+    'follow_up', 'attrition', 'statistics', 'ethical_approval', 'funding',
+    'conflicts', 'limitations'];
+  const present = order.filter((name) => (fields[name] || []).length);
+
+  const body = el('div', { class: 'stack' });
+
+  if (present.length) {
+    body.append(el('div', { class: 'table-wrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ['Field', 'Read as', 'Where', 'From the article']
+        .map((h) => el('th', {}, h)))),
+      el('tbody', {}, present.flatMap((name) => (fields[name] || []).map((hit, index) =>
+        el('tr', {},
+          el('td', {}, index === 0 ? name.replace(/_/g, ' ') : ''),
+          el('td', {}, el('strong', {}, hit.value)),
+          el('td', {}, el('code', { class: 'anchor' }, hit.anchor),
+            hit.section ? el('span', { class: 'hint' }, ` ${hit.section}`) : null),
+          el('td', {}, el('span', { class: 'quoted-source' }, hit.sentence)))))))));
+  }
+
+  if ((extracted.missing || []).length) {
+    body.append(notice(extracted.missing_note, 'warn'));
+  }
+
+  body.append(notice(extracted.note));
+
+  if (extracted.applied_note) {
+    body.append(notice(extracted.applied_note, 'good'));
+  } else {
+    body.append(el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        fulltextState.extractions[row.work_key] = await post(
+          `/api/projects/${project.project_id}/fulltext/${encodeURIComponent(row.work_key)}/extract`,
+          { apply: true });
+        toast('Written into the evidence matrix.');
+        state.project = (await api(`/api/projects/${project.project_id}`)).project;
+        refresh();
+      }),
+    }, 'Fill the empty matrix cells with this'));
+    body.append(el('p', { class: 'hint' }, 'Only cells you have left empty are '
+      + 'written to. Anything you typed wins.'));
+  }
+
+  return card(`What the article says — ${row.label || row.work_key}`, body);
 }
 
 /* ------------------------------------------------------------------ appraise */
@@ -771,11 +991,133 @@ function viewCheck() {
                 : `${values.difference > 0 ? '+' : ''}${values.difference}`))))))));
     }
 
+    host.append(groundingCard());
+    host.append(proofCardResearch());
+
     host.append(el('button', { class: 'button', onclick: () => go('export') },
       'Next: export →'));
   }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
 
   return el('section', { class: 'stack' }, el('h1', {}, 'Check'), host);
+}
+
+/* The paper's own grammar and spelling pass. `writing/proof.py` was written and
+   tested and then imported by nothing at all — the charting tab got its
+   proofreader wired up and the research side, which is where "zero grammatical
+   errors" was actually asked for, did not. */
+
+function proofCardResearch() {
+  const project = state.project;
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Checking…'));
+
+  api(`/api/projects/${project.project_id}/proof`).then((report) => {
+    host.replaceChildren();
+
+    if (!report.available) {
+      host.append(notice(report.note, 'warn'));
+      host.append(el('details', {}, el('summary', {}, 'Why not Grammarly?'),
+        el('p', { class: 'hint' }, report.grammarly.summary),
+        el('p', { class: 'hint' }, report.grammarly.manual_route),
+        el('pre', { class: 'macro-output' }, report.grammarly.in_pipeline)));
+      return;
+    }
+
+    host.append(notice(`${report.engine} checked ${report.checked_words.toLocaleString()} `
+      + `words across the claim ledger.`,
+      report.issues.length ? 'warn' : 'good'));
+
+    if (!report.issues.length) {
+      host.append(notice('No spelling or grammar issues found.', 'good'));
+    } else {
+      const counts = Object.entries(report.by_category)
+        .sort((a, b) => b[1] - a[1]);
+      host.append(el('div', { class: 'chip-row' },
+        counts.map(([name, count]) => chip(`${name}: ${count}`))));
+      host.append(el('div', { class: 'list' }, report.issues.map((issue) =>
+        el('div', { class: 'flag flag-warn' },
+          el('div', { class: 'flag-head' },
+            chip(issue.category || 'issue'),
+            el('span', { class: 'flag-code' },
+              `${issue.section || 'body'} · ${issue.claim_id || ''}`)),
+          el('p', { class: 'flag-message' }, issue.message),
+          issue.context ? el('p', { class: 'flag-excerpt' }, issue.context) : null,
+          issue.replacements.length
+            ? el('p', { class: 'flag-suggestion' },
+              `Suggested: ${issue.replacements.slice(0, 4).join(' · ')}`)
+            : null))));
+    }
+
+    host.append(el('p', { class: 'hint' }, report.note));
+  }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+
+  return card('Spelling and grammar', host);
+}
+
+function groundingCard() {
+  const project = state.project;
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Anchoring…'));
+
+  api(`/api/projects/${project.project_id}/grounding`).then((report) => {
+    host.replaceChildren();
+
+    if (!report.ingested.length) {
+      host.append(notice('No full text has been ingested, so no claim could be '
+        + 'anchored to the paragraph it came from. Read the articles in on the '
+        + 'Full text screen and this becomes a real check rather than a blank '
+        + 'one.', 'warn'));
+      host.append(el('button', { class: 'button button-quiet', onclick: () => go('fulltext') },
+        'Go to Full text'));
+      return;
+    }
+
+    const kind = { 'anchored': 'good', 'verbatim overlap': 'bad',
+      'not found in source': 'bad', 'no full text': 'warn' };
+
+    host.append(statBlock([
+      [report.checked, 'claims checked'],
+      [report.unsupported.length, 'not found in source'],
+      [report.verbatim.length, 'verbatim overlap'],
+      [report.unchecked.length, 'no full text yet'],
+    ]));
+
+    if (report.unsupported.length) {
+      host.append(notice('A claim not found in the source it cites is either '
+        + 'attributed to the wrong article or was never in any article. Both '
+        + 'read identically in a finished draft, which is why this check '
+        + 'exists.', 'bad'));
+    }
+
+    host.append(el('div', { class: 'list' }, report.claims.map((row) =>
+      el('div', { class: 'row' },
+        el('div', { class: 'row-head' },
+          el('span', { class: 'row-title' }, row.text),
+          chip(row.status, kind[row.status] || '')),
+        el('div', { class: 'stack' },
+          el('p', { class: 'hint' }, row.detail),
+          row.matches.length
+            ? el('div', { class: 'table-wrap' }, el('table', {},
+              el('thead', {}, el('tr', {}, ['Source', 'Where', 'Match', 'The paragraph']
+                .map((h) => el('th', {}, h)))),
+              el('tbody', {}, row.matches.map((match) => el('tr', {},
+                el('td', {}, match.label || match.work_key),
+                el('td', {}, el('code', { class: 'anchor' }, match.anchor),
+                  match.section ? el('span', { class: 'hint' }, ` ${match.section}`) : null),
+                el('td', {}, chip(match.basis,
+                  match.basis === 'verbatim' ? 'bad'
+                    : match.basis === 'close paraphrase' ? 'good' : 'warn')),
+                el('td', {}, el('span', { class: 'quoted-source' }, match.excerpt)))))))
+            : null)))));
+
+    if (report.not_ingested.length) {
+      host.append(notice(`Cited but not ingested: ${report.not_ingested.join(', ')}. `
+        + 'Claims resting on those sources were not checked — which is not the '
+        + 'same as their having passed.', 'warn'));
+    }
+
+    host.append(notice(report.note));
+  }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+
+  return card('Is every claim actually in the source it cites?', host);
 }
 
 /* -------------------------------------------------------------------- export */
@@ -896,7 +1238,240 @@ function viewExport() {
         }),
       }, 'Export')),
     card('Files', files),
+    figuresCard(),
     prismaCard());
+}
+
+/* -------------------------------------------------------------------- figures */
+
+/* The figure builder. `apa/figures.py` had a forest plot, an incidence curve
+   and two bar charts — every figure type the specification named, all with a
+   colourblind-safe palette and greyscale-safe secondary encoding — and nothing
+   in the interface could reach any of them. Only the level-distribution chart
+   had a button. A feature nobody can click is a feature that does not exist. */
+
+const FIGURE_KINDS = [
+  ['forest', 'Forest plot — odds or risk ratios with confidence intervals'],
+  ['line', 'Incidence curve — a measure over time'],
+  ['bar', 'Bar chart — one value per category'],
+  ['grouped_bar', 'Grouped bar chart — several series per category'],
+];
+
+const figureState = { kind: 'forest', rows: 3, series: 2, output: null };
+
+function repeatRow(...cells) {
+  return el('div', { class: 'repeat-row' }, ...cells);
+}
+
+function numberInput(placeholder) {
+  return el('input', { type: 'text', inputmode: 'decimal', placeholder });
+}
+
+function figuresCard() {
+  const project = state.project;
+  const host = el('div', { class: 'stack' });
+
+  const kindSelect = el('select', {
+    onchange: () => { figureState.kind = kindSelect.value; paint(); },
+  }, FIGURE_KINDS.map(([value, label]) =>
+    el('option', { value, selected: figureState.kind === value }, label)));
+
+  const titleInput = el('input', { type: 'text', placeholder: 'Odds of falling by staffing ratio' });
+  const captionInput = el('input', { type: 'text', placeholder: 'optional caption for the audit document' });
+  const output = el('div', { class: 'stack' });
+
+  const existing = el('div', { class: 'list' });
+  const refreshFigures = () => api(`/api/projects/${project.project_id}/figures`)
+    .then((data) => {
+      existing.replaceChildren();
+      if (!data.figures.length) {
+        existing.append(el('p', { class: 'hint' }, 'No figures attached yet. '
+          + 'Anything built here is placed in the paper as a numbered APA '
+          + 'figure and on a slide in the deck.'));
+        return;
+      }
+      for (const figure of data.figures) {
+        existing.append(el('div', { class: 'row' },
+          el('div', { class: 'row-head' },
+            el('span', { class: 'row-title' }, figure.title || figure.kind),
+            chip(figure.kind)),
+          el('div', { class: 'stack' },
+            el('img', {
+              src: `/api/projects/${project.project_id}/files/${encodeURIComponent(figure.path)}?token=${encodeURIComponent(state.token)}`,
+              alt: figure.title || 'Figure',
+              class: 'figure-preview',
+            }),
+            el('p', { class: 'hint' }, figure.note))));
+      }
+    }).catch(() => { /* nothing built yet */ });
+  refreshFigures();
+
+  const build = (payload) => guard(async () => {
+    const out = await post(`/api/projects/${project.project_id}/figure`,
+      Object.assign({ title: titleInput.value, caption: captionInput.value },
+        payload));
+    output.replaceChildren(
+      el('img', {
+        src: `/api/projects/${project.project_id}/files/${encodeURIComponent(out.path)}?token=${encodeURIComponent(state.token)}`,
+        alt: titleInput.value || 'Figure',
+        class: 'figure-preview',
+      }),
+      notice(out.placement, 'good'),
+      el('p', { class: 'hint' }, 'Figure note: ' + out.note),
+      out.table ? el('div', { class: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, out.table.headers.map((h) => el('th', {}, h)))),
+        el('tbody', {}, out.table.rows.map((row) =>
+          el('tr', {}, row.map((cell) => el('td', {}, cell))))))) : null,
+      el('p', { class: 'hint' }, 'APA 7 asks that a figure not be the only '
+        + 'place a number appears. The table above is the same data in text, '
+        + 'ready to paste.'));
+    refreshFigures();
+  });
+
+  function paint() {
+    host.replaceChildren();
+    const kind = figureState.kind;
+
+    if (kind === 'forest') {
+      const measure = el('select', {},
+        ['Odds ratio', 'Risk ratio', 'Hazard ratio', 'Mean difference',
+          'Standardised mean difference'].map((m) => el('option', { value: m }, m)));
+      const rows = [];
+      const rowHost = el('div', { class: 'stack' });
+      const addRow = () => {
+        const cells = {
+          label: el('input', { type: 'text', placeholder: 'Smith et al. (2023)' }),
+          estimate: numberInput('0.62'),
+          lower: numberInput('0.45'),
+          upper: numberInput('0.85'),
+          weight: numberInput('weight %'),
+          subgroup: el('input', { type: 'text', placeholder: 'subgroup (optional)' }),
+        };
+        rows.push(cells);
+        rowHost.append(repeatRow(cells.label, cells.estimate, cells.lower,
+          cells.upper, cells.weight, cells.subgroup));
+      };
+      for (let i = 0; i < 3; i += 1) addRow();
+
+      host.append(
+        field('Measure', measure),
+        el('p', { class: 'hint' }, 'Study, estimate, lower and upper confidence '
+          + 'limit, weight, subgroup. A ratio measure is drawn on a log scale '
+          + 'with the line of no effect at 1, which is what makes a forest plot '
+          + 'readable.'),
+        rowHost,
+        el('button', { class: 'button button-quiet', onclick: addRow }, '+ Another study'),
+        el('button', {
+          class: 'button',
+          onclick: () => build({
+            kind: 'forest',
+            measure: measure.value,
+            estimates: rows
+              .filter((r) => r.label.value.trim() && r.estimate.value.trim())
+              .map((r) => ({
+                label: r.label.value, estimate: r.estimate.value,
+                lower: r.lower.value, upper: r.upper.value,
+                weight: r.weight.value || 0, subgroup: r.subgroup.value,
+              })),
+          }),
+        }, 'Draw the forest plot'));
+
+    } else if (kind === 'bar') {
+      const categories = el('input', { type: 'text', placeholder: 'Ward A, Ward B, Ward C' });
+      const values = el('input', { type: 'text', placeholder: '3.1, 4.8, 2.2' });
+      const yLabel = el('input', { type: 'text', placeholder: 'Falls per 1,000 patient-days' });
+      host.append(
+        field('Categories', categories, 'separate with commas'),
+        field('Values', values, 'one per category, in the same order'),
+        field('Y-axis label', yLabel),
+        el('button', {
+          class: 'button',
+          onclick: () => build({
+            kind: 'bar',
+            categories: splitList(categories.value),
+            values: splitList(values.value),
+            y_label: yLabel.value,
+          }),
+        }, 'Draw the bar chart'));
+
+    } else {
+      const xLabels = el('input', { type: 'text', placeholder: 'Q1, Q2, Q3, Q4' });
+      const xLabel = el('input', { type: 'text', placeholder: 'Quarter' });
+      const yLabel = el('input', { type: 'text', placeholder: 'Incidence per 1,000 patient-days' });
+      const seriesRows = [];
+      const seriesHost = el('div', { class: 'stack' });
+      const addSeries = () => {
+        const cells = {
+          name: el('input', { type: 'text', placeholder: 'Intervention' }),
+          values: el('input', { type: 'text', placeholder: '4.1, 3.6, 2.9, 2.4' }),
+        };
+        seriesRows.push(cells);
+        seriesHost.append(repeatRow(cells.name, cells.values));
+      };
+      addSeries(); addSeries();
+
+      host.append(
+        field(kind === 'line' ? 'Time points' : 'Categories', xLabels,
+          'separate with commas'),
+        kind === 'line' ? field('X-axis label', xLabel) : null,
+        field('Y-axis label', yLabel),
+        el('p', { class: 'hint' }, 'Each series is a name and its values, in '
+          + 'the same order as the labels above. Every series gets a distinct '
+          + 'marker and line style as well as a colour, so the figure survives '
+          + 'being printed in greyscale.'),
+        seriesHost,
+        el('button', { class: 'button button-quiet', onclick: addSeries }, '+ Another series'),
+        el('button', {
+          class: 'button',
+          onclick: () => build({
+            kind,
+            x_labels: splitList(xLabels.value),
+            categories: splitList(xLabels.value),
+            x_label: xLabel.value,
+            y_label: yLabel.value,
+            series: seriesRows
+              .filter((s) => s.name.value.trim() && s.values.value.trim())
+              .map((s) => [s.name.value, splitList(s.values.value)]),
+          }),
+        }, kind === 'line' ? 'Draw the incidence curve' : 'Draw the grouped bars'));
+    }
+  }
+  paint();
+
+  return card('Figures',
+    el('p', { class: 'hint' }, 'Every figure is drawn at 300 dpi with a '
+      + 'colourblind-safe palette, and every series carries a second encoding — '
+      + 'a marker shape or a line style — so it is still readable in greyscale '
+      + 'and in print. Each one is attached to the project and placed in the '
+      + 'paper as a numbered APA figure with its note beneath.'),
+    field('Figure type', kindSelect),
+    field('Title', titleInput),
+    field('Caption', captionInput, 'appears in the audit document'),
+    host,
+    output,
+    el('h3', {}, 'Evidence levels'),
+    el('p', { class: 'hint' }, 'A bar chart of the JBI/AACN levels across the '
+      + 'included studies, built from the project rather than typed in.'),
+    el('button', {
+      class: 'button button-quiet',
+      onclick: () => guard(async () => {
+        const out = await post(`/api/projects/${project.project_id}/figure/levels`, {});
+        output.replaceChildren(
+          el('img', {
+            src: `/api/projects/${project.project_id}/files/${encodeURIComponent(out.path)}?token=${encodeURIComponent(state.token)}`,
+            alt: 'Distribution of evidence levels',
+            class: 'figure-preview',
+          }),
+          el('p', { class: 'hint' }, 'Figure note: ' + out.note));
+        refreshFigures();
+      }),
+    }, 'Chart the evidence levels'),
+    el('h3', {}, 'Attached to this paper'),
+    existing);
+}
+
+function splitList(text) {
+  return String(text || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ settings */
@@ -1012,12 +1587,42 @@ function viewSettings() {
         }),
       }, 'Add sample')),
 
+    grammarlyCard(),
+
     card('Where things are',
       el('div', { class: 'table-wrap' }, el('table', {},
         el('tbody', {},
           [['Projects', config.data_dir], ['Exports', config.export_dir],
             ['Secrets', config.keyring_available ? 'OS keychain' : (config.env_file || 'not written yet')]]
             .map(([label, value]) => el('tr', {}, el('th', {}, label), el('td', {}, value))))))));
+}
+
+/* You asked for the grammar checking to be "maybe linked to my Grammarly". It
+   cannot be, and the honest answer with the working alternative belongs where
+   you would go looking for it rather than buried in a README. */
+
+function grammarlyCard() {
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
+
+  api('/api/grammarly').then((status) => {
+    host.replaceChildren(
+      notice(status.summary, 'warn'),
+      el('h3', {}, 'What to do instead'),
+      el('p', { class: 'hint' }, status.manual_route),
+      el('h3', {}, 'What runs here'),
+      el('pre', { class: 'macro-output' }, status.in_pipeline),
+      el('h3', {}, 'Every alternative that returns something actionable'),
+      el('div', { class: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, ['Tool', 'Licence', 'Returns', 'Runs locally']
+          .map((h) => el('th', {}, h)))),
+        el('tbody', {}, status.alternatives.map((row) => el('tr', {},
+          el('td', {}, row.name),
+          el('td', {}, row.licence),
+          el('td', {}, row.returns),
+          el('td', {}, row.local ? chip('yes', 'good') : chip('sends your draft out', 'warn'))))))));
+  }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+
+  return card('Grammarly', host);
 }
 
 /* ---------------------------------------------------------------- bootstrap */
@@ -1338,6 +1943,34 @@ function journalCard() {
       field('Abstract', abstractBox)),
     field('Author guidelines', guidelines),
     el('button', {
+      class: 'button button-quiet',
+      onclick: () => guard(async () => {
+        const profile = await post('/api/journals/parse',
+          { text: guidelines.value, name: 'Pasted guidelines' });
+        const rows = [
+          ['Word limit', profile.word_limit],
+          ['Abstract limit', profile.abstract_limit],
+          ['Reference limit', profile.reference_limit],
+          ['Structured abstract', profile.abstract_structured ? 'yes' : 'not stated'],
+          ['Citation style', profile.style],
+          ['Blinded submission', profile.blinded ? 'yes' : 'not stated'],
+          ['Reporting checklist', profile.reporting_guideline],
+          ['Required statements', (profile.required_statements || []).join(', ')],
+        ].filter(([, value]) => value !== null && value !== undefined && value !== '');
+        output.replaceChildren(
+          notice('This is what the parser found in the text you pasted. A blank '
+            + 'means it was not stated — nothing here is inferred, because an '
+            + 'invented word limit is worse than a missing one.', 'warn'),
+          el('div', { class: 'table-wrap' }, el('table', {},
+            el('tbody', {}, rows.map(([name, value]) => el('tr', {},
+              el('th', {}, name), el('td', {}, String(value))))))),
+          (profile.abstract_headings || []).length
+            ? el('p', { class: 'hint' },
+              `Abstract headings: ${profile.abstract_headings.join(' · ')}`)
+            : null);
+      }),
+    }, 'Read the pasted guidelines'),
+    el('button', {
       class: 'button',
       onclick: () => guard(async () => {
         if (!state.project) { toast('Open a project first.', true); return; }
@@ -1420,7 +2053,75 @@ function statisticsCard() {
         output.replaceChildren(...children);
       }),
     }, 'Translate to APA'),
-    output);
+    output,
+    manualStatistics());
+}
+
+/* Typing the numbers in by hand, for the output the parser cannot read — an R
+   package it does not know, a table copied out of a PDF, a figure from a paper
+   you are reporting. The formatting rules are the point of this tool and they
+   apply the same either way; without this, an unparseable table meant losing
+   them entirely. */
+
+function manualStatistics() {
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
+
+  api('/api/statistics/supported').then((data) => {
+    host.replaceChildren();
+    const output = el('div', {});
+    const variables = el('input', {
+      type: 'text', placeholder: 'fall rates between the two units',
+    });
+    const fieldHost = el('div', { class: 'stack' });
+    let inputs = {};
+
+    const kindSelect = el('select', {}, data.tests.map((test) =>
+      el('option', { value: test.kind }, test.label)));
+
+    const paintFields = () => {
+      const test = data.tests.find((t) => t.kind === kindSelect.value);
+      inputs = {};
+      fieldHost.replaceChildren(
+        el('p', { class: 'hint' }, `Renders as: ${test.apa}`),
+        el('div', { class: 'repeat-row' }, test.fields.map((name) => {
+          inputs[name] = numberInput(name);
+          return el('label', { class: 'tight' }, name, inputs[name]);
+        })));
+    };
+    kindSelect.addEventListener('change', paintFields);
+    paintFields();
+
+    host.append(
+      field('Test', kindSelect),
+      fieldHost,
+      field('What was compared', variables, 'goes into the sentence'),
+      el('button', {
+        class: 'button button-quiet',
+        onclick: () => guard(async () => {
+          const values = {};
+          for (const [name, node] of Object.entries(inputs)) {
+            if (node.value.trim()) values[name] = node.value.trim();
+          }
+          const out = await post('/api/statistics/manual',
+            { kind: kindSelect.value, values, variables: variables.value });
+          output.replaceChildren(
+            el('pre', { class: 'macro-output' }, out.sentence),
+            el('button', {
+              class: 'button button-quiet button-small',
+              onclick: () => navigator.clipboard.writeText(out.sentence).then(
+                () => toast('Copied.'), () => toast('Could not copy.', true)),
+            }, 'Copy'));
+        }),
+      }, 'Format these values'),
+      output);
+  }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+
+  return el('div', { class: 'subcard' },
+    el('h3', {}, 'Or type the numbers in'),
+    el('p', { class: 'hint' }, 'For output the parser cannot read — an R package '
+      + 'it does not know, or a result you are reporting from someone else’s '
+      + 'paper. The APA formatting rules are the same either way.'),
+    host);
 }
 
 /* ===================================================================== PRISMA */

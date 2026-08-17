@@ -35,13 +35,15 @@ something that quietly does less than it claims, here is the honest ledger.
 
 | Asked for | Reality |
 |---|---|
-| Direct API access to CINAHL, PsycINFO, Embase, Cochrane, JBI, Global Health, Scopus | **None of these sells API access to an unaffiliated individual, at any price.** PsycINFO has no API for *anyone*. Automating them through a library proxy violates every one of those licences and can get a hospital library's whole IP range blocked. → The tool makes **citation-file import a first-class path**, so those records flow through the same pipeline. See [Reaching the gated databases](#reaching-the-gated-databases). |
+| Direct API access to CINAHL, PsycINFO, Embase, Cochrane, JBI, Global Health, Scopus, IEEE Xplore, JSTOR | **None of these sells API access to an unaffiliated individual, at any price.** PsycINFO has no API for *anyone*. IEEE Xplore's API is institution-only and its terms forbid redistribution of the metadata. JSTOR has no search API at all — its Constellate text-analysis service closed in July 2025, and what remains is a dataset request for named research projects, not a query endpoint. Automating any of them through a library proxy violates every one of those licences and can get a hospital library's whole IP range blocked. → The tool makes **citation-file import a first-class path**, so those records flow through the same pipeline with their provenance recorded. See [Reaching the gated databases](#reaching-the-gated-databases). |
 | Grammarly integration | **Not possible by any supported route.** The Text Editor SDK — the only embedding route — was discontinued on 10 January 2024, with no successor. The current developer API is Enterprise/Education-only and returns *scores*, not suggestions, offsets or corrected text. → Self-hosted **LanguageTool** in the pipeline; Grammarly as a manual final pass in Word. See [Grammar and spelling](#grammar-and-spelling). |
-| Verify 0% similarity before export | **Not achievable and not desirable.** No legitimate paper scores 0% — reference lists match the original articles byte-for-byte by design, quotations are supposed to match verbatim, and the standard phrasing of the field recurs in thousands of papers. Real journals see 16–19% on average. **0% is the fraud signature**, not the goal. → The tool reports **unattributed verbatim overlap against the sources you actually cited**, with offsets, and blocks export on citation defects. It never prints a percentage. See [What "no plagiarism" can honestly mean](#what-no-plagiarism-can-honestly-mean). |
+| Verify a 0% similarity score on Turnitin before export | **Not achievable and not desirable.** No legitimate paper scores 0% — reference lists match the original articles byte-for-byte by design, quotations are supposed to match verbatim, and the standard phrasing of the field recurs in thousands of papers. Real journals see 16–19% on average. **0% is the fraud signature**, not the goal. → The tool reports **unattributed verbatim overlap against the sources you actually cited**, with offsets, and blocks export on citation defects. It never prints a percentage. See [What "no plagiarism" can honestly mean](#what-no-plagiarism-can-honestly-mean). |
 | Reproduce CASP / JBI / AGREE II checklists | **Depends on the instrument, and the differences are large.** JBI's 2023–25 tools say "unauthorized reproduction prohibited"; COREQ is all-rights-reserved. → The tool implements the same methodological **domains** in its own words, names and cites the instrument it follows, and never reproduces item text. See [Appraisal and licensing](#appraisal-and-licensing). |
 | AI-detection gate before export | **Deliberately not built.** Detectors measure perplexity, not authorship, and misclassify non-native-English writing at a high rate (Liang et al., *Patterns*, 2023). Gating on one would fail honest work. → A claim-by-claim provenance ledger instead, which is something a detector cannot give you. |
+| AI-detection shielding — vary sentence length and vocabulary to bypass detectors | **Not built, and I want to be straight with you about why rather than quietly leaving it out.** Two separate reasons. First, it does not work: every published evaluation of "humanizer" tools finds the effect is unstable and detector-specific, so a paper that passes one checker this week fails another next week, and you would have traded real confidence for a number you cannot rely on. Second, a tool whose stated purpose is defeating an academic-integrity check is a tool that assumes the work is not yours — and if the draft came out of the claim ledger, in your own sentences, from sources you read, then it *is* yours and the honest answer to a flag is the ledger. → What is built instead is **stylometric calibration against your own writing samples**: sentence-length variance, subordination, hedging, nominalisation and reading level measured on your uploaded work and compared with the draft, with the drifted features named. That is the same underlying statistics, aimed at making the draft sound like you rather than at making it sound like nobody. See [Writing in your own voice](#writing-in-your-own-voice). |
 | Royalty-free visual assets with APA provenance | **Not built, and this row exists because an audit found it missing from this table.** The tool generates figures from your own data and cites them properly; it does not source stock imagery. A general image search that respected licensing would need a licensed image API and a rights database, and an unlicensed one would hand you an image you cannot legally publish while telling you that you can — which is worse than nothing. → Generate figures from data, or supply your own image and record its licence and attribution yourself. |
-| Pull graphs, pictures and charts *out of* retrieved papers | **Not built.** A figure lifted from a published paper is the copyright holder's, and reproducing one in your own work needs permission that a tool cannot grant. Extracting the underlying *data* from a published chart is also not reliable enough to trust silently. → The suite plots figures from data you enter or from the CDC and WHO data APIs, with the provenance and licence recorded. |
+| Pull graphs, pictures and charts *out of* retrieved papers | **Not built.** A figure lifted from a published paper is the copyright holder's, and reproducing one in your own work needs permission that a tool cannot grant. Extracting the underlying *data* from a published chart is also not reliable enough to trust silently. → The suite plots figures from data you enter or from the CDC and WHO data APIs, with the provenance and licence recorded. Full-text **numbers** are a different matter and are extracted — see [Full text: anchoring and extraction](#full-text-anchoring-and-extraction). |
+| "The AI reads the PDFs and extracts sample sizes, methodologies, *p*-values and outcomes" | **Built, and built as a reader rather than a model** — which is a smaller promise, deliberately. It returns nothing it cannot point at: every value carries the page, the paragraph and the sentence it was read out of, and anything it could not find is listed as missing rather than guessed. A model asked to fill an extraction table will fill it, and a plausible sample size in a matrix is worse than an empty cell, because the empty cell gets checked. See [Full text: anchoring and extraction](#full-text-anchoring-and-extraction). |
 | A charting tab that leaves a nurse "100% covered" in litigation | **No document guarantees an outcome.** A nurse who did the right thing can still be named; one who documented perfectly can still be found to have breached a standard of care. → The tool structures the five things that actually go missing under pressure — observation, impression, action, **notification**, re-evaluation — and refuses to save a note that drops the one that matters. See [The charting tab](#the-charting-tab). |
 | Auto-suggest an ESI triage level from vitals and chief complaint | **This is clinical decision support and it would be unsafe.** A triage acuity assigned by a tool is also indefensible in a deposition. → The tool walks the four published decision points *you* answer, computes what the algorithm yields, shows the working, and displays the danger-zone thresholds so your judgement is informed rather than replaced. |
 | Reproduce Braden, Morse, Wong-Baker FACES, CAM-ICU, FLACC, CPOT, ESI, APACHE II | **Copyrighted, and FACES is a trademark whose artwork is licensed.** A subtly paraphrased near-copy would be worse than either extreme: it looks like the instrument while scoring something slightly different. → Scoring arithmetic and published thresholds implemented, item wording written fresh, no artwork reproduced, every rights holder named on the Reference screen. |
@@ -474,6 +476,94 @@ trusted as current is worse than none.
 
 ---
 
+## Full text: anchoring and extraction
+
+Step 4 of the workflow. Read a source's full text in — a PDF, a text file, or
+pasted text — and it becomes a list of **anchored paragraphs**, each carrying
+its page number, its position on that page, the section it falls under, and a
+digest of its own text.
+
+That anchor is the thing everything else here is built on.
+
+### Extraction: a reader, not a model
+
+`extract()` pulls the evidence-matrix fields out of the passages: design,
+statistical analyses, sample size, response rate, follow-up, attrition,
+statistical results, ethical approval, funding, conflicts of interest,
+limitations.
+
+**Everything it returns carries the page and the sentence it was read out of,
+and it returns nothing it cannot point at.** That is a deliberate limit, and the
+reason is the failure mode of the alternative. A language model asked to fill an
+extraction table will fill it. A plausible unsourced sample size in a matrix is
+worse than an empty cell, because an empty cell gets checked and a filled one
+does not.
+
+So it reports what it matched, says so, and lists what it could not find:
+
+> Not found in the text: funding, conflicts. An absent funding or ethics
+> statement is itself a finding — both are reporting requirements, and their
+> absence belongs in your appraisal.
+
+One button fills the empty cells of the evidence matrix from what it read.
+Only the empty ones: anything you typed wins.
+
+Two details that took a second pass to get right, both of which produce a
+*wrong-looking* cell rather than a missing one:
+
+- A confidence interval reads to its closing bracket, not to the first period.
+  The first version turned `95% CI [0.45, 0.85]` into `95% CI [0` — which in a
+  matrix looks like a transcription error you then have to go and chase.
+- The name of a test is methodology, not a result. `chi-square test` goes in an
+  **analysis** column; `χ²(3, N = 1,204) = 12.44` goes in the results column.
+
+### Anchoring: every claim tied to the paragraph it came from
+
+The Check screen runs the claim ledger against the ingested full text and sorts
+every claim into one of four states:
+
+| State | What it means |
+|---|---|
+| **anchored** | Found in the source it cites, with the locator |
+| **verbatim overlap** | Repeats eight or more consecutive words — quote it and give the locator, or reword it |
+| **not found in source** | Nothing in the cited work supports this sentence |
+| **no full text** | Not checked, which is *not* the same as having passed |
+
+The fourth row is the one that matters most for honesty. A claim that could not
+be checked is reported as unchecked and is never counted as clean.
+
+Matching is on **containment**, in two signals that are deliberately kept apart.
+Content-word and trigram overlap catch a *paraphrase*, which is what
+source-grounding actually needs; eight-word runs catch *verbatim* lifting, which
+is a different problem with a different fix. The first version of this scored
+eight-word shingles alone — which meant it could anchor exactly the sentences
+that were already a plagiarism problem, and nothing that had been properly
+reworded.
+
+One thing it does not do, stated on the screen itself: matching finds where a
+claim came from; it does not judge whether the source says what the claim says
+it says. A green anchor means the sentence is traceable, not that it is true.
+The excerpt is shown beside it so you can read it.
+
+### PDFs are optional, on purpose
+
+`pypdf` is in `requirements.txt` and imported lazily behind a guard. Without it
+you lose PDF parsing and keep pasted text, and the interface says which. The
+guard catches more than `ImportError`: on one machine `import pypdf` pulled in a
+`cryptography` build whose Rust extension aborted, which arrives as a
+`PanicException` inheriting from `BaseException`. A guard that caught only
+`ImportError` turned a broken optional dependency into a 500 on the endpoint
+that was merely asking whether the feature existed.
+
+A scanned PDF has no text layer, and the tool says so by name rather than
+returning nothing and leaving you to guess:
+
+> The PDF opened but contained no extractable text. That almost always means it
+> is a scan rather than a digital document — the pages are images. It needs OCR
+> before anything here can read it.
+
+---
+
 ## The four artefacts
 
 An export produces four files.
@@ -849,9 +939,11 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
-| `test_research_tools.py` | 266 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say |
-| `test_frontend.py` | 62 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired |
+| `test_research_tools.py` | 273 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say — and that it *does* read a structured abstract stated as a sentence, which is the commonest way a journal writes it and which the parser used to miss entirely |
+| `test_frontend.py` | 63 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
+| `test_fulltext.py` | 227 | Headings matched against the **whole line**, so "Abstract reasoning was assessed" does not re-section the paper; a section carrying across a page break, including a page that *ends* on a heading; a paraphrase located as well as a verbatim run, because a locator that only finds plagiarism is not a locator; an unrelated sentence finding nothing, which is the answer this exists to give; intervals not truncated and brackets balanced; the same number written two ways counted once; and a source that states nothing producing an empty matrix and a `missing` list rather than a filled one |
+| `test_deck.py` | 45 | The class of defect where a feature exists, works, and is reachable from nothing: figures actually packaged into the .pptx, the evidence-level chart recorded on the project rather than only drawn, speaker notes as complete sentences carrying APA in-text citations (including a group-author abbreviation and a quotation locator), no citation invented for an uncited claim, and a deleted image not taking the whole deck with it |
 | `test_charting_flow.py` | 269 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
 
 ---
@@ -861,6 +953,8 @@ take against Firestore.
 - **Automated access to subscription databases.** Not a missing feature — a
   licence violation with real consequences for a hospital library.
 - **An AI-detection gate.** See the table at the top.
+- **AI-detection shielding.** Same table. It does not reliably work, and the
+  honest answer to a flag is the claim ledger.
 - **A similarity percentage.** Same.
 - **Verbatim copies of copyrighted appraisal instruments.**
 - **Cloud sync.** A single-user local tool with JSON files does not need it, and

@@ -31,7 +31,7 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
 from ..models import Project, SupportType, Work
-from .citations import CitationContext, Run, intext, reference_list
+from .citations import CitationContext, Run, intext, plain, reference_list
 
 # 16:9, the shape every projector and conference room expects.
 SLIDE_WIDTH = Inches(13.333)
@@ -267,11 +267,52 @@ class ApaDeck:
                         runs.extend(intext(works, self.context,
                                            locator=claim.locus or ""))
                     plan.bullets.append((claim.claim_id, runs))
-                plan.speaker_notes = "\n".join(
-                    f"{c.claim_id}: {c.rationale}" for c in chunk if c.rationale
-                )
+                plan.speaker_notes = self._speaker_notes(chunk, by_key, title)
                 slides.append(plan)
         return slides
+
+    def _speaker_notes(self, claims: list, by_key: dict[str, Work],
+                       heading: str) -> str:
+        """Prose to say while the slide is up.
+
+        Complete sentences, and every borrowed point carries its APA in-text
+        citation, because a presenter reading from these notes should be able
+        to attribute a claim aloud without going back to the paper. This used
+        to emit `claim-003: <rationale>` — a debugging aid rather than
+        something a person could read out.
+
+        The full sentence is given rather than the shortened bullet: the slide
+        holds the fragment and the notes hold what it means, which is the
+        division of labour that makes a bullet safe to shorten in the first
+        place.
+        """
+        lines: list[str] = []
+        if heading:
+            lines.append(f"This slide covers {heading.rstrip('.')}.")
+
+        for claim in claims:
+            works = [by_key[k] for k in claim.work_keys if k in by_key]
+            sentence = _to_bullet(claim.text).rstrip(".")
+            if not sentence:
+                continue
+            if works and claim.support_type is not SupportType.NO_CITATION:
+                citation = plain(intext(works, self.context,
+                                        locator=claim.locus or ""))
+                lines.append(f"{sentence} {citation}.")
+            else:
+                lines.append(f"{sentence}.")
+            if claim.rationale:
+                reason = claim.rationale.strip().rstrip(".")
+                lines.append(f"This source was chosen because {reason[0].lower()}"
+                             f"{reason[1:]}." if reason else "")
+            if claim.support_type is SupportType.DIRECT_QUOTE:
+                lines.append("Read this one as a direct quotation — it is "
+                             "verbatim and the locator is on the slide.")
+
+        if any(c.work_keys for c in claims):
+            lines.append("Full references are on the References slides at the "
+                         "end, in the same order as the paper's reference list.")
+        return "\n".join(line for line in lines if line)
 
     def build(self, slides: list[Slide] | None = None,
               figures: list[Slide] | None = None) -> "ApaDeck":

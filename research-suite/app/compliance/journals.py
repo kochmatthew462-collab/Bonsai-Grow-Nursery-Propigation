@@ -267,6 +267,17 @@ def get(key: str) -> JournalProfile | None:
 
 _NUM = r"(\d[\d,]*)"
 
+# The section names journals use in a structured abstract. Kept as one
+# non-capturing group so it can be reused inside a larger pattern — matching a
+# comma-separated run of them needs the word pattern twice over.
+_HEADING_WORD = (
+    r"\b(?:Background|Objectives?|Aims?(?:\s+and\s+Objectives)?|Design|Setting|"
+    r"Participants?|Interventions?|Methods?|Results?|Findings|Conclusions?|"
+    r"Discussion|Impact|Implications?|Relevance\s+to\s+Clinical\s+Practice|"
+    r"Interpretation|Funding|Registration|Trial\s+registration|"
+    r"Patient\s+or\s+Public\s+Contribution|Linking\s+Evidence\s+to\s+Action)"
+)
+
 
 def parse(text: str, *, name: str = "") -> JournalProfile:
     """Read author guidelines into a profile.
@@ -324,21 +335,34 @@ def parse(text: str, *, name: str = "") -> JournalProfile:
                                   int(keywords.group(2)))
 
     # Structured abstract: look for a run of capitalised headings near "abstract".
+    #
+    # Two shapes, because journals write this two ways and missing either one
+    # produces the same silent failure — a paper submitted with a flowing
+    # abstract to a journal that requires named sections, which is a desk
+    # rejection before anyone reads a word of it.
     structured = re.search(
-        r"structured\s+abstract|abstract\s+(?:should|must)\s+be\s+structured",
-        blob, re.IGNORECASE)
+        r"structured\s+abstract|(?:should|must|shall)\s+be\s+structured",
+        abstract_zone, re.IGNORECASE) or re.search(
+        r"structured\s+abstract", blob, re.IGNORECASE)
     profile.abstract_structured = bool(structured)
-    headings = re.findall(
-        r"\b(Background|Objectives?|Aims?(?:\s+and\s+Objectives)?|Design|Setting|"
-        r"Participants?|Interventions?|Methods?|Results?|Findings|Conclusions?|"
-        r"Discussion|Impact|Implications?|Relevance\s+to\s+Clinical\s+Practice|"
-        r"Interpretation|Funding|Registration|Trial\s+registration[^,.\n]*|"
-        r"Patient\s+or\s+Public\s+Contribution|Linking\s+Evidence\s+to\s+Action)"
-        r"\s*[:—-]", abstract_zone)
+
+    # Shape one: each heading typeset with its own colon or dash, which is how
+    # a template lists them.
+    headings = re.findall(_HEADING_WORD + r"\s*[:—-]", abstract_zone)
+    if not headings:
+        # Shape two: a comma-separated sentence — "structured with Background,
+        # Methods, Results and Conclusions". Three or more in a run, because two
+        # nouns in a row is ordinary prose and three is a specification.
+        run = re.search(
+            _HEADING_WORD + r"(?:\s*(?:,|;)\s*(?:and\s+)?|\s+and\s+)"
+            + _HEADING_WORD + r"(?:(?:\s*(?:,|;)\s*(?:and\s+)?|\s+and\s+)"
+            + _HEADING_WORD + r")+", abstract_zone)
+        if run:
+            headings = re.findall(_HEADING_WORD, run.group(0))
     if headings:
         seen: list[str] = []
         for heading in headings:
-            cleaned = " ".join(heading.split())
+            cleaned = " ".join(heading.rstrip(":—- ").split()).title()
             if cleaned not in seen:
                 seen.append(cleaned)
         profile.abstract_headings = seen

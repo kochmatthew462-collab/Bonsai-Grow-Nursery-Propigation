@@ -540,3 +540,61 @@ details summary {
  * `good`, `warn` and `bad` are shared with the research half above. */
 .chip-block { color: var(--bad); border-color: currentColor; font-weight: 700; }
 .chip-info  { color: var(--accent-ink); border-color: currentColor; }
+
+/* ---------------------------------------------------- full text and figures */
+
+/* An anchor is a locator — `p. 4, para. 2`. Monospaced so a column of them
+ * lines up, which is how you scan for the one you want. */
+.anchor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  background: var(--surface-sunken);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* The paragraph a claim was drawn from, shown beside the claim. Set smaller and
+ * secondary so the eye reads the claim first and the evidence second. */
+.quoted-source {
+  display: block;
+  max-width: 52ch;
+  font-size: 0.82rem;
+  color: var(--ink-secondary);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 0.5rem;
+}
+
+/* A white plate behind every figure. The PNGs are drawn on white, and in dark
+ * mode an untinted background would leave the plot floating on a dark page with
+ * its own white bounding box showing. */
+.figure-preview {
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem;
+}
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* A short labelled field inside a repeat-row: the label above a narrow input,
+ * several to a line. Used for the statistics-by-hand fields. */
+label.tight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--ink-secondary);
+  min-width: 5.5rem;
+  flex: 1 1 5.5rem;
+}
+label.tight input { font-size: 0.85rem; }
+
+/* On a wide screen the repeat-row is a row; it stays a column on narrow ones,
+ * which is the rule the charting repeatables already follow. */
+@media (min-width: 720px) {
+  .repeat-row { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+  .repeat-row > input { flex: 1 1 8rem; min-width: 0; }
+}
