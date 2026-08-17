@@ -281,6 +281,72 @@ once there is a full year to generate it from.
 
 ---
 
+## Weather watch and move alerts
+
+Both container trees move in and out on a schedule, and the whole point of the
+schedule is that it bends to the actual weather. The app fetches the 14-day
+forecast for the nursery's coordinates and judges each tree against **its own**
+thresholds:
+
+| Tree | In | Threshold | Out | Threshold |
+|---|---|---|---|---|
+| Italian bergamot | Oct 15–20 | nights settling to 45–50 °F; 32 °F damages foliage | May 1–10 | nights reliably above 50 °F |
+| Arbequina olive | Nov 1–10 | nights approaching 30–32 °F | Apr 1–10 | nights consistently above 35–40 °F |
+
+The two directions are judged differently on purpose. **In autumn the worst
+night rules** — one freeze does the damage, so a single forecast night at or
+below the damage threshold overrides the calendar entirely. **In spring every
+night has to clear the bar** — the risk is moving too early, so one cold night
+in the next five holds the tree indoors.
+
+A 10-day acclimation prompt appears before each window: shaded porch before
+coming in, sheltered shade with morning sun introduced gradually before going
+out.
+
+Location defaults to Brookeville, MD (39.18, −77.06), the ZIP 20833 both tree
+handbooks are written for, and is editable on the Calendar page. The forecast
+comes from **Open-Meteo** — free, no API key, CORS-enabled, which is what makes
+it usable from a static page with nothing to keep secret. Responses are cached
+for an hour.
+
+### Where these dates differ from the handbooks
+
+The transition schedule above is followed, and it is not identical to the
+handbooks. The differences are noted in each task on screen:
+
+- **Bergamot in** — schedule Oct 15–20, handbook Oct 1–15. The schedule is
+  *later*; the weather rule pulls it forward if nights actually drop.
+- **Bergamot out** — schedule May 1–10, handbook May 10–20.
+- **Olive out** — schedule Apr 1–10, handbook mid-to-late April, so about two
+  weeks earlier.
+
+In every case the forecast rule overrides the date, which is what keeps the
+earlier windows safe: the app will not say "go" while cold nights are coming.
+
+## What "notify" can honestly mean here
+
+There is no server in this app, which is what makes it free — and it is also
+why it cannot wake a sleeping phone by itself. So the notification problem is
+split in two:
+
+**Date-driven reminders → your own calendar.** The Calendar page exports every
+dated window as an `.ics` file: yearly-repeating all-day events with an alarm
+the day before. Import or subscribe once and your phone's calendar fires those
+in the background, forever, with nothing running anywhere. This covers moves,
+pruning, repotting, feeding cutoffs and the bench changeovers.
+
+**Weather-driven alerts → while the app is open.** These cannot be scheduled in
+advance, because the forecast that triggers them does not exist yet. The app
+raises them whenever it is open or opened, and will fire a real system
+notification at that moment if you allow it — once per alert per day, so it does
+not train you to ignore it.
+
+The practical habit: subscribe to the calendar for the dates, and open the app
+during a cold snap. Anything more than that needs a server sending push, which
+would end the "free, no accounts" property this whole thing is built on.
+
+---
+
 ## Sync, or the lack of it
 
 By default **readings are stored in this browser on this device** and are not
@@ -344,7 +410,8 @@ js/profiles.js      care profiles: tracked factors, target bands, watch lists
 js/store.js         plants, readings, merge and tombstones — the only storage code
 js/sync.js          optional Firestore sync over REST (no SDK, no CDN)
 js/charts.js        SVG charts, hover and keyboard readout, table views
-js/calendar.js      dated task windows and the derived drip log
+js/calendar.js      dated task windows, the derived drip log, .ics export
+js/weather.js       forecast fetch and the move alerts it drives
 js/app.js           routing and views
 test/               verification, described below
 ```
@@ -372,6 +439,7 @@ python3 test/verify_qr.py     # the QR encoder
 python3 test/smoke_app.py     # the app, in a real browser
 python3 test/sync_test.py     # two devices converging through sync
 python3 test/calendar_test.py # the calendar and the derived drip log
+python3 test/weather_test.py  # move alerts and the calendar export
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
@@ -412,5 +480,15 @@ Sunday (the hand-watering day), it must stay bounded to 30 days of backfill so
 first use does not invent months of history, it must be idempotent across
 repeated renders, it must honour the pomegranate's winter clamp by logging
 nothing, and it must say plainly whether the flow rate is calibrated or nominal.
+
+`weather_test.py` tests the alert decision table directly, against synthetic
+forecasts at fixed dates rather than whatever the weather happens to be doing —
+getting it wrong either way is expensive, since too eager costs the olive weeks
+of the chill it needs and too slow freezes a container root ball. It checks that
+a freezing night overrides the window, that 37–45 °F nights read as chill for the
+olive but a threat for the citrus, that the two trees do **not** move on the same
+night, and that one cold night in spring holds a tree indoors. The forecast fetch
+runs against a mock of the Open-Meteo endpoint served from the app's own origin,
+so it needs no network and no key.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.

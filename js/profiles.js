@@ -296,6 +296,20 @@
     /* --------------------------------------------- container trees, ZIP 20833 */
     {
       id: 'bergamot',
+      transitions: {
+        acclimationDays: 10,
+        fall: {
+          window: ['10-15', '10-20'],
+          moveAtLow: 48,
+          damageLow: 32,
+          note: 'Bring it in when overnight lows settle into the 45-50 F band. Foliage and fruit take chill damage below 32 F, and cold media slows root uptake, which is what produces the leaf drop indoors.'
+        },
+        spring: {
+          window: ['05-01', '05-10'],
+          moveAboveLow: 50,
+          note: 'Out only when nights hold reliably above 50 F. The average last frost is mid-April, but spring cold snaps linger; early May protects tender new growth and gives warm media.'
+        }
+      },
       tasks: [
         { id: 'bg-prune', from: '02-01', to: '02-28', category: 'prune', title: 'Structural pruning',
           body: 'During the cool rest. Max 20-25% canopy removal per year. Scaffolds 3-5 at 45-60 degree crotch angles, headed 24-30 in above the media.' },
@@ -305,10 +319,10 @@
           body: 'And resume feeding. 3:1:1 or 2:1:1 N:P:K with micronutrients, 100-150 ppm N in active growth.' },
         { id: 'bg-repot', from: '04-01', to: '04-30', category: 'repot', title: 'Root prune / media refresh if due',
           body: 'Every 2-3 years, in April only. Avoid September through February: transplanting into declining light is how young citrus are lost.' },
-        { id: 'bg-harden', from: '04-15', to: '05-10', category: 'move', title: 'Begin hardening off',
+        { id: 'bg-harden', from: '04-21', to: '05-01', category: 'move', title: 'Begin hardening off',
           body: 'Two weeks of graduated light and temperature before the move. Skipping this is the usual cause of a bergamot going bare.' },
-        { id: 'bg-out', from: '05-10', to: '05-20', category: 'move', title: 'Move outdoors',
-          body: 'When nights are reliably above 50 F. Peak bloom follows: do not let it dry out.' },
+        { id: 'bg-out', from: '05-01', to: '05-10', category: 'move', title: 'Move outdoors',
+          body: 'When nights are reliably above 50 F. Peak bloom follows: do not let it dry out. (Transition schedule window; the handbook says May 10-20. Watch the forecast rather than the date - the weather card holds it indoors if any of the next five nights fall below 50 F.)' },
         { id: 'bg-thin', from: '06-01', to: '06-30', category: 'prune', title: 'Thin fruit after June drop',
           body: '1 fruit per 20-25 leaves. Mature load is 15-30 on a 5-6 ft tree. Pinch the flush.' },
         { id: 'bg-n-stop', from: '08-15', to: '08-15', category: 'feed', title: 'Final nitrogen date',
@@ -317,8 +331,8 @@
           body: 'Treat before it joins the indoor station, not after. Scale, mealybug, mites.' },
         { id: 'bg-ph-autumn', from: '09-25', to: '10-10', category: 'measure', title: 'Test media pH (autumn)',
           body: 'Second of the two annual tests, at the move indoors. Deep flush 2-3x container volume at the same time.' },
-        { id: 'bg-in', from: '10-01', to: '10-15', category: 'move', title: 'Move indoors',
-          body: 'Before nights approach 50 F. Expect leaf drop — it stacks the move with falling light. Do not also repot.' },
+        { id: 'bg-in', from: '10-15', to: '10-20', category: 'move', title: 'Move indoors',
+          body: 'Before nights approach 50 F. Expect leaf drop - it stacks the move with falling light. Do not also repot. (Transition schedule window; the handbook says Oct 1-15, so this is the later of the two. The weather card will pull it forward if nights actually drop.)' },
         { id: 'bg-rest', from: '12-01', to: '12-10', category: 'system', title: 'Cool rest begins',
           body: 'Hold 45-58 F, bright, dry and unfertilised for 8-12 weeks. Never below 40 F at pot level. This is what induces next spring\'s bloom.' }
       ],
@@ -373,6 +387,21 @@
     },
     {
       id: 'arbequina-olive',
+      transitions: {
+        acclimationDays: 10,
+        fall: {
+          window: ['11-01', '11-10'],
+          moveAtLow: 32,
+          damageLow: 28,
+          chillBonus: [35, 50],
+          note: 'Bring it in as nights approach 30-32 F. It tolerates brief light frost, so it stays out later than the citrus — and mild autumn nights in the 35-50 F band are banking the dormancy and chill the crop depends on.'
+        },
+        spring: {
+          window: ['04-01', '04-10'],
+          moveAboveLow: 38,
+          note: 'Out when nights hold consistently above 35-40 F. Hardier than the citrus in late chills, so it is the first tree back outside.'
+        }
+      },
       tasks: [
         { id: 'ol-chill-log', from: '11-01', to: '02-28', category: 'measure', title: 'Log chill hours weekly',
           body: 'Running hours below 45 F, plus weeks held at 50-55 F. When the tree does not flower, this log is the first thing to check — always.' },
@@ -382,8 +411,8 @@
           body: 'Balanced fertiliser, half strength, monthly. Deep flush first.' },
         { id: 'ol-repot', from: '04-01', to: '04-30', category: 'repot', title: 'Root prune / media refresh if due',
           body: 'Every 2-3 years, in April.' },
-        { id: 'ol-out', from: '04-15', to: '04-30', category: 'move', title: 'Move outdoors',
-          body: 'Nights above 40 F, mid-to-late April. Harden gradually — an abrupt move into full sun bleaches leaves.' },
+        { id: 'ol-out', from: '04-01', to: '04-10', category: 'move', title: 'Move outdoors',
+          body: 'Nights holding consistently above 35-40 F. Harden gradually - an abrupt move into full sun bleaches leaves. (Transition schedule window; the handbook says mid-to-late April, so this is about two weeks earlier. The weather card holds it in if any of the next five nights fall below 38 F.)' },
         { id: 'ol-thin', from: '06-01', to: '06-30', category: 'prune', title: 'Thin fruit',
           body: '1 fruit per 6-8 in of fruiting shoot, on one-year-old wood. Thin, never shear. Heavy flower drop before this is normal — 1-2% set is a good year.' },
         { id: 'ol-peacock', from: '07-01', to: '07-31', category: 'pest', title: 'Scout for peacock spot',
@@ -392,7 +421,7 @@
           body: 'Hard stop. Excess nitrogen gives long soft shoots and no fruit — the same picture as inadequate chill.' },
         { id: 'ol-harvest', from: '09-01', to: '10-31', category: 'measure', title: 'Harvest window',
           body: 'Green harvest from September, purple and black through October. Bloom to harvest is 4-5 months; mature yield 2-5 lb.' },
-        { id: 'ol-in', from: '10-20', to: '11-15', category: 'move', title: 'Move indoors, ahead of a hard freeze',
+        { id: 'ol-in', from: '11-01', to: '11-10', category: 'move', title: 'Move indoors, ahead of a hard freeze',
           body: 'Deep flush first. Then hold 50-55 F for 10-12 weeks, bright, dry and unfertilised, with a fan for air movement and humidity under 50%. Never below 40 F at pot level.' },
         { id: 'ol-verify-space', from: '09-15', to: '10-15', category: 'system', title: 'Verify the winter space holds 50-55 F',
           body: 'Put a thermometer in the candidate space and watch it through a cold snap BEFORE you need it. Too warm (65-72 F) and induction fails as surely as too cold.' }

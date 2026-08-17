@@ -617,6 +617,49 @@ ol.steps strong { color: var(--text-primary); }
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
+/* -------------------------------------------------------------- weather */
+
+.alert {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--wash);
+  border-left: 3px solid var(--axis);
+}
+.alert[data-level="bad"]  { border-left-color: var(--status-critical); }
+.alert[data-level="warn"] { border-left-color: var(--status-warn); }
+.alert[data-level="good"] { border-left-color: var(--status-good); }
+.alert-title { font-weight: 600; font-size: 0.92rem; }
+.alert-body { font-size: 0.85rem; color: var(--text-secondary); }
+.alert-plant { font-size: 0.78rem; color: var(--text-muted); }
+
+.forecast {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.forecast-day {
+  flex: none;
+  min-width: 62px;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 1px;
+}
+.forecast-day .d { font-size: 0.68rem; color: var(--text-secondary); }
+.forecast-day .lo {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.forecast-day .hi { font-size: 0.7rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.forecast-day[data-cold="true"] { border-color: var(--status-critical); }
+.forecast-day[data-cold="true"] .lo { color: var(--critical); }
+
 /* ---------------------------------------------------------------- print */
 
 @media print {
