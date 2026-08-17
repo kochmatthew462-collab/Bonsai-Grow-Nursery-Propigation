@@ -559,6 +559,59 @@ def test_an_unclaimable_port_fails_loudly() -> None:
           "an existing listener", "setsockopt" not in claim, True)
 
 
+def test_shell_scripts_are_pinned_to_lf() -> None:
+    """A CRLF shebang is the most confusing way this app can fail to start.
+
+    Git for Windows defaults to core.autocrlf=true, which rewrites checked-out
+    shell scripts to CRLF. The script then dies with
+
+        bash: ./run.sh: /usr/bin/env bash^M: bad interpreter
+
+    which reads as "the file is missing or broken" while the file looks perfect
+    in an editor. Without a .gitattributes nothing prevents it, and nothing on
+    screen points at the cause.
+    """
+    attributes = ROOT.parent / ".gitattributes"
+    check(".gitattributes exists at the repository root", attributes.exists(),
+          True)
+    if not attributes.exists():
+        return
+    text = attributes.read_text("utf-8")
+    check("*.sh is pinned to LF",
+          bool(re.search(r"^\*\.sh\s+text\s+eol=lf", text, re.MULTILINE)), True)
+
+    # And the files in the tree must actually be LF, or the attribute is
+    # describing something that is not true.
+    for name in ("run.sh",):
+        raw = (ROOT / name).read_bytes()
+        check(f"{name} contains no CR bytes", b"\r" not in raw, True)
+
+
+def test_the_launcher_names_its_own_failures() -> None:
+    """"It won't start" must never be all the user gets.
+
+    Every branch that can stop the launcher says which one it was: no Python, a
+    Python too old, or a missing venv module. The failure this replaced printed
+    nothing useful and left the browser pointed at a dead URL.
+    """
+    script = (ROOT / "run.sh").read_text("utf-8")
+    for phrase, why in [
+        ("Python 3.11 or newer", "the version requirement"),
+        ("python3-venv", "Debian's separately-packaged venv module"),
+        ("KRS_PYTHON", "the override for a differently-named interpreter"),
+        ("run.ps1", "the Windows launcher"),
+        ("bash run.sh", "the fallback when the executable bit or shebang fails"),
+    ]:
+        check(f"run.sh mentions {why}", phrase in script, True)
+    # It must try more than one interpreter name: minimal installs have only
+    # one of python3 and python, and "python3: not found" is a dead end for
+    # someone who does have Python.
+    check("run.sh tries more than one interpreter name",
+          "python3 python" in script, True)
+    check("run.sh exits non-zero when it cannot find one",
+          "exit 1" in script, True)
+
+
 def test_the_launcher_refreshes_a_stale_environment() -> None:
     """A pull that adds a dependency must not leave the venv behind.
 
