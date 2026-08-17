@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koch Research Suite</title>
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'&gt;&lt;text y='13' font-size='13'&gt;📑&lt;/text&gt;&lt;/svg&gt;">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand"><span aria-hidden="true">📑</span> Koch Research Suite</div>
+  <nav class="app-nav" id="nav" hidden>
+    <button type="button" data-view="sources" class="is-active">1 · Sources</button>
+    <button type="button" data-view="screen">2 · Screen</button>
+    <button type="button" data-view="appraise">3 · Appraise</button>
+    <button type="button" data-view="write">4 · Write</button>
+    <button type="button" data-view="check">5 · Check</button>
+    <button type="button" data-view="export">6 · Export</button>
+    <button type="button" data-view="settings">Settings</button>
+  </nav>
+  <div class="header-right">
+    <span id="project-label" class="project-label"></span>
+    <button type="button" id="switch-project" class="button button-quiet" hidden>Switch</button>
+  </div>
+</header>
+
+<main id="view" class="app-main"></main>
+
+<div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+
+<template id="tpl-projects">
+  <section class="stack">
+    <h1>Projects</h1>
+    <p class="lede">
+      Each project is one paper: its search history, its screened sources, its
+      appraisals, its claim ledger, and both output documents. Everything is
+      stored as a single JSON file you can read, back up or hand to a supervisor.
+    </p>
+
+    <div class="card">
+      <h2>Start a new paper</h2>
+      <label>Topic
+        <input type="text" id="new-topic" placeholder="Nurse staffing ratios and inpatient fall rates">
+      </label>
+      <label>Research question <span class="hint">optional, but it sharpens every later step</span>
+        <input type="text" id="new-question" placeholder="Do higher nurse staffing ratios reduce inpatient falls in adult acute care?">
+      </label>
+      <label>Academic level
+        <select id="new-level">
+          <option value="undergraduate">Undergraduate</option>
+          <option value="graduate" selected>Graduate</option>
+          <option value="doctoral">Doctoral / DNP</option>
+        </select>
+      </label>
+      <button type="button" id="create-project" class="button">Create project</button>
+    </div>
+
+    <div class="card">
+      <h2>Existing projects</h2>
+      <div id="project-list" class="list"></div>
+    </div>
+  </section>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

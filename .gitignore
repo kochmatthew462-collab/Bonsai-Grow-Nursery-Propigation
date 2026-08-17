@@ -2,3 +2,21 @@ __pycache__/
 *.pyc
 test/reference.json
 screenshots/
+
+# --- research-suite ---
+# Secrets. The repo publishes a GitHub Pages site from its own branch, so a
+# committed .env would be served as a static file at a guessable URL. Ignoring
+# it is not tidiness; it is the difference between a private key and a published
+# one. A key that has ever been committed must be rotated — rewriting history
+# does not unpublish it.
+.env
+.env.*
+!.env.example
+research-suite/.env
+research-suite/.env.*
+!research-suite/.env.example
+
+# Local project data, caches and generated documents.
+research-suite/data/
+research-suite/**/__pycache__/
+research-suite/.venv/
