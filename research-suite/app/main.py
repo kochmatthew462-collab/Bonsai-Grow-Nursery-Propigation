@@ -1401,9 +1401,71 @@ def _project_payload(project: Project) -> dict[str, Any]:
     return payload
 
 
+def _claim_port(host: str, preferred: int, *, tries: int = 12):
+    """Take the port before anything is printed, and return the live socket.
+
+    The banner used to print first and uvicorn bound afterwards. When the port
+    was already taken — a second `run.sh`, or an earlier run still going in
+    another terminal — the user got a perfectly healthy-looking URL with a bind
+    error underneath it, opened the URL, and the browser said the page could
+    not be reached. A startup message that advertises an address nothing is
+    listening on is worse than a crash.
+
+    Binding here and handing the socket to uvicorn also removes the race a
+    check-then-bind would leave: the port cannot be taken between the test and
+    the use, because they are the same operation.
+    """
+    import socket
+
+    first_error = None
+    for offset in range(tries):
+        port = preferred + offset
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Deliberately no SO_REUSEADDR: the whole point is to fail when someone
+        # else holds the port, and on some platforms that option would let this
+        # bind succeed alongside them.
+        try:
+            sock.bind((host, port))
+            sock.listen(128)
+            sock.set_inheritable(True)
+            return sock, port, (first_error if offset else None)
+        except OSError as error:
+            sock.close()
+            if first_error is None:
+                first_error = error
+            continue
+    raise SystemExit(
+        f"\n  Could not start: ports {preferred}–{preferred + tries - 1} on "
+        f"{host} are all in use.\n"
+        f"  ({first_error})\n\n"
+        f"  The usual cause is that this is already running in another terminal "
+        f"or tab —\n"
+        f"  look for one showing 'Koch Research Suite' and use the URL it "
+        f"printed, or stop\n"
+        f"  it with Ctrl-C and start again. To pick a port yourself, set "
+        f"RESEARCH_SUITE_PORT.\n"
+    )
+
+
 def run() -> None:
     import uvicorn
+
+    # The port is claimed before the banner is composed, so the URL in the
+    # banner is guaranteed to be one something is actually listening on.
+    preferred = SETTINGS.port
+    sock, port, moved = _claim_port(SETTINGS.host, preferred)
+    SETTINGS.port = port
+    SECURITY.port = port
+
     warnings = [w for w in [settings_module.contact_email_warning(SETTINGS)] if w]
+    if moved is not None:
+        warnings.insert(0, (
+            f"Port {preferred} is in use, so this run is on {port} instead. "
+            f"Something else is already listening on {preferred} — most often "
+            f"an earlier run of this app in another terminal. Use the URL "
+            f"above; a tab open on {preferred} is a different, older run with "
+            f"a different token."
+        ))
     if not SETTINGS.key("anthropic"):
         warnings.append(
             "No Anthropic API key: drafting is unavailable. Retrieval, "
@@ -1411,7 +1473,9 @@ def run() -> None:
             "without one."
         )
     print(security.startup_banner(SECURITY, warnings), flush=True)
-    uvicorn.run(app, host=SETTINGS.host, port=SETTINGS.port, log_level="warning")
+
+    config = uvicorn.Config(app, log_level="warning")
+    uvicorn.Server(config).run(sockets=[sock])
 
 
 if __name__ == "__main__":

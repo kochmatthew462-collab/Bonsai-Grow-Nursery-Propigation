@@ -511,6 +511,69 @@ def test_research_routes_are_reachable_from_the_ui() -> None:
     check("no research route is orphaned from the UI", orphaned, [])
 
 
+# ==================================================== 6. Startup
+
+# Not front-end code, but the same class of defect and the same suite is where
+# anyone would look for it: something the user is told, that is not true.
+
+
+def test_the_banner_never_advertises_a_port_that_was_not_claimed() -> None:
+    """The URL in the banner must be one something is listening on.
+
+    The banner used to print first and uvicorn bound afterwards. With the port
+    already taken — a second `run.sh`, or an earlier run still going in another
+    terminal — the user got a healthy-looking URL with a bind error underneath
+    it, opened the URL, and the browser said the page could not be reached.
+
+    So: the socket is claimed before the banner is composed, and handed to
+    uvicorn. That ordering is the whole fix, and it is what this asserts.
+    """
+    source = (ROOT / "app" / "main.py").read_text("utf-8")
+    body = source[source.index("def run() -> None:"):]
+
+    claim = body.find("_claim_port(")
+    banner = body.find("startup_banner(")
+    check("run() claims the port", claim >= 0, True)
+    check("run() prints a banner", banner >= 0, True)
+    check("the port is claimed before the banner is printed",
+          0 <= claim < banner, True)
+
+    # The claimed socket must be the one served on, or the claim proves nothing.
+    check("the claimed socket is handed to uvicorn",
+          "sockets=[sock]" in body, True)
+    check("uvicorn.run is not used, since it would bind a second time",
+          "uvicorn.run(" not in body, True)
+
+
+def test_an_unclaimable_port_fails_loudly() -> None:
+    """No URL may be printed when nothing could be bound."""
+    source = (ROOT / "app" / "main.py").read_text("utf-8")
+    claim = source[source.index("def _claim_port("):source.index("def run() -> None:")]
+    check("it raises rather than returning", "raise SystemExit" in claim, True)
+    for phrase in ("already running in another terminal", "RESEARCH_SUITE_PORT"):
+        check(f"the failure explains {phrase!r}", phrase in claim, True)
+    # Asserted on the call, not the constant's name: the source *comment*
+    # explains why SO_REUSEADDR is absent, and a name-based check matched that
+    # comment and failed. Comments are prose; setsockopt is behaviour.
+    check("it sets no socket option that would let a bind succeed alongside "
+          "an existing listener", "setsockopt" not in claim, True)
+
+
+def test_the_launcher_refreshes_a_stale_environment() -> None:
+    """A pull that adds a dependency must not leave the venv behind.
+
+    Installing only when `.venv` was absent meant a newly added, optional,
+    guarded dependency silently did not install — so the feature it backed just
+    did not work, with nothing on screen to say why.
+    """
+    for name in ("run.sh", "run.ps1"):
+        script = (ROOT / name).read_text("utf-8")
+        check(f"{name} hashes requirements.txt",
+              "requirements.txt" in script and "sha" in script.lower(), True)
+        check(f"{name} reinstalls when the hash differs",
+              script.count("pip install --quiet -r requirements.txt") >= 2, True)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):
