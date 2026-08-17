@@ -80,6 +80,16 @@ body {
 
 .brand { font-weight: 650; letter-spacing: -0.01em; }
 
+/* `hidden` has to win over every layout rule below.
+ *
+ * The browser's own `[hidden] { display: none }` is a user-agent rule, and any
+ * author rule beats it — so `.app-nav { display: flex }` quietly un-hid a nav
+ * that JavaScript had set `hidden` on. The workflow nav appeared before a
+ * project was open, and seven of its buttons then threw on a null project and
+ * left the whole page blank. Anything that sets `hidden` in this app is stating
+ * an intent that layout must not override. */
+[hidden] { display: none !important; }
+
 .app-nav { display: flex; gap: 0.25rem; flex-wrap: wrap; flex: 1 1 auto; }
 
 .app-nav button {

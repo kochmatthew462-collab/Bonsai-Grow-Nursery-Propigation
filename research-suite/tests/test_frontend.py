@@ -266,6 +266,75 @@ def test_query_selectors_resolve() -> None:
             check(f"{selector} has a match in index.html", needle in html, True)
 
 
+def test_hidden_beats_every_layout_rule() -> None:
+    """`hidden` must not be silently overridden by the stylesheet.
+
+    `[hidden] { display: none }` is a *user-agent* rule, and any author rule
+    beats it. `.app-nav { display: flex }` therefore un-hid a nav that
+    JavaScript had explicitly set `hidden` on — the workflow nav appeared
+    before any project was open, both navs showed at once, and seven of those
+    buttons then threw on a null project and left the page blank.
+
+    The guard needs `!important` rather than mere source order, because
+    `[hidden]` and `.app-nav` have identical specificity: without it, whichever
+    rule is written last wins, and that is not a property anyone will remember
+    while editing a stylesheet.
+    """
+    # Comments stripped first. Without that this matched the `[hidden] {
+    # display: none }` written inside the comment *explaining* the rule, and
+    # passed while asserting nothing — the same trap the identifier scans in
+    # this file already carry a note about.
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "styles.css").read_text("utf-8"),
+                 flags=re.DOTALL)
+    rule = re.search(r"\[hidden\]\s*\{([^}]*)\}", css)
+    check("styles.css defines a [hidden] rule", bool(rule), True)
+    if not rule:
+        return
+    body = rule.group(1)
+    check("it sets display: none", "display" in body and "none" in body, True)
+    check("it is !important, so specificity and order cannot defeat it",
+          "!important" in body, True)
+
+
+def test_every_element_the_scripts_hide_is_actually_hideable() -> None:
+    """The reverse direction: find the conflict rather than trust the guard.
+
+    For every element the scripts set `.hidden` on, look for a stylesheet rule
+    that sets `display` on the same id or on a class that element carries. Any
+    such rule is a live override unless the global guard is in place.
+    """
+    html = (STATIC / "index.html").read_text("utf-8")
+    css = (STATIC / "styles.css").read_text("utf-8")
+    guarded = bool(re.search(r"\[hidden\]\s*\{[^}]*!important", css))
+
+    hidden_ids: set[str] = set()
+    for name in SCRIPTS:
+        source = _source(name)
+        hidden_ids |= set(re.findall(
+            r"getElementById\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\.hidden\s*=", source))
+
+    check("the scripts hide at least one element", bool(hidden_ids), True)
+
+    for element_id in sorted(hidden_ids):
+        # The classes that element carries in the HTML.
+        tag = re.search(rf'<[^>]*\bid="{re.escape(element_id)}"[^>]*>', html)
+        classes: set[str] = set()
+        if tag:
+            found = re.search(r'class="([^"]*)"', tag.group(0))
+            if found:
+                classes = set(found.group(1).split())
+
+        selectors = [f"#{element_id}"] + [f".{c}" for c in sorted(classes)]
+        conflicting = [
+            selector for selector in selectors
+            if re.search(rf"(?:^|[,}}])\s*{re.escape(selector)}\s*\{{[^}}]*display\s*:",
+                         css, re.MULTILINE)
+        ]
+        if conflicting:
+            check(f"#{element_id} sets display via {conflicting} — needs the "
+                  f"[hidden] !important guard", guarded, True)
+
+
 def test_html_loads_every_script() -> None:
     html = (STATIC / "index.html").read_text("utf-8")
     for name in SCRIPTS:
@@ -369,6 +438,59 @@ def test_charting_routes_are_reachable_from_the_ui() -> None:
 # Routes the browser reaches without any script asking for them: the shell
 # itself, and a health check meant for the terminal.
 NOT_CALLED_BY_SCRIPT = {"/", "/healthz", "/static", "/api/config"}
+
+
+def test_every_nav_button_has_a_view() -> None:
+    """A `data-view` with no entry in VIEWS silently falls back to Projects."""
+    html = (STATIC / "index.html").read_text("utf-8")
+    source = _source("app.js")
+    block = re.search(r"const VIEWS\s*=\s*\{(.*?)\n\};", source, re.DOTALL)
+    check("app.js declares a VIEWS map", bool(block), True)
+    if not block:
+        return
+    mapped = set(re.findall(r"^\s*(\w+)\s*:", block.group(1), re.MULTILINE))
+    for view in sorted(set(re.findall(r'data-view="([^"]+)"', html))):
+        check(f"nav button {view!r} has a view function", view in mapped, True)
+
+
+def test_project_dependent_views_are_declared() -> None:
+    """Each view that dereferences the open project must say so.
+
+    Without the declaration the view runs with `state.project === null`, throws,
+    and leaves the page blank — which is how a nav bug turned into "nothing
+    populates". The list is checked against the source rather than trusted.
+    """
+    source = _source("app.js")
+    block = re.search(r"const VIEWS_NEEDING_A_PROJECT\s*=\s*new Set\(\[(.*?)\]\)",
+                      source, re.DOTALL)
+    check("app.js declares VIEWS_NEEDING_A_PROJECT", bool(block), True)
+    if not block:
+        return
+    declared = set(re.findall(r"'([^']+)'", block.group(1)))
+
+    # A view function that reads a property straight off `state.project` cannot
+    # run without one. `state.project ? …` and `!state.project` are guards, not
+    # dereferences, so they do not count.
+    for match in re.finditer(r"^function view(\w+)\(\) \{", source, re.MULTILINE):
+        name = match.group(1).lower()
+        end = source.find("\n}\n", match.end())
+        body = source[match.end(): end if end > 0 else len(source)]
+        dereferences = re.search(r"state\.project\.\w+", body) or re.search(
+            r"const project = state\.project;[\s\S]{0,400}?project\.\w+", body)
+        # A view may instead handle the empty case itself — Question and
+        # Compliance are useful before a project exists and only need one when
+        # you press a button, so they check at that point. Either discipline is
+        # fine; having neither is the defect.
+        guards = "!state.project" in body
+        if dereferences and not guards and name != "projects":
+            check(f"view{match.group(1)} reads the project, so it is declared "
+                  f"or guards internally", name in declared, True)
+
+    mapped = set(re.findall(r"^\s*(\w+)\s*:", re.search(
+        r"const VIEWS\s*=\s*\{(.*?)\n\};", source, re.DOTALL).group(1),
+        re.MULTILINE))
+    for view in sorted(declared):
+        check(f"{view!r} is a real view", view in mapped, True)
 
 
 def test_research_routes_are_reachable_from_the_ui() -> None:

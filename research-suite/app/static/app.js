@@ -143,21 +143,54 @@ function render() {
 
   const host = document.getElementById('view');
   host.replaceChildren();
-  const views = {
-    projects: viewProjects,
-    question: viewQuestion,
-    sources: viewSources,
-    screen: viewScreen,
-    fulltext: viewFulltext,
-    appraise: viewAppraise,
-    write: viewWrite,
-    check: viewCheck,
-    export: viewExport,
-    compliance: viewCompliance,
-    settings: viewSettings,
-  };
-  host.append((views[state.view] || viewProjects)());
+
+  if (VIEWS_NEEDING_A_PROJECT.has(state.view) && !state.project) {
+    host.append(el('section', { class: 'stack' },
+      el('h1', {}, 'Open a project first'),
+      notice('That step works on one paper’s sources, claims and documents, so '
+        + 'it needs a project open. Pick one below or start a new one.', 'warn'),
+      viewProjects()));
+    return;
+  }
+
+  // Wrapped, because the failure mode without it is the worst one this
+  // interface has: a view that throws leaves `#view` empty — the nav still
+  // highlights, the page is simply blank, and nothing says why. A visible
+  // error is recoverable; a blank screen is not.
+  try {
+    host.append((VIEWS[state.view] || viewProjects)());
+  } catch (error) {
+    host.replaceChildren(el('section', { class: 'stack' },
+      el('h1', {}, 'That screen failed to draw'),
+      notice(`${error.message}. Nothing has been lost — your project is on `
+        + 'disk. Try another step, or reload the page.', 'bad'),
+      el('button', { class: 'button', onclick: () => go('projects') },
+        'Back to projects')));
+    throw error;                      // still surfaces in the console
+  }
 }
+
+const VIEWS = {
+  projects: viewProjects,
+  question: viewQuestion,
+  sources: viewSources,
+  screen: viewScreen,
+  fulltext: viewFulltext,
+  appraise: viewAppraise,
+  write: viewWrite,
+  check: viewCheck,
+  export: viewExport,
+  compliance: viewCompliance,
+  settings: viewSettings,
+};
+
+/* Steps that read the open project. Question, Compliance and Settings are
+   deliberately absent: framing a question, parsing a rubric or a journal's
+   guidelines, and setting your contact email are all things worth doing before
+   a project exists. */
+const VIEWS_NEEDING_A_PROJECT = new Set([
+  'sources', 'screen', 'fulltext', 'appraise', 'write', 'check', 'export',
+]);
 
 function go(view) {
   state.view = view;
