@@ -84,8 +84,33 @@
   }
 
   function listPlants() {
-    return load().plants.filter(alive).sort(function (a, b) {
+    return load().plants.filter(function (p) {
+      return alive(p) && p.status !== 'lost';
+    }).sort(function (a, b) {
       return (a.name || '').localeCompare(b.name || '');
+    });
+  }
+
+  // Lost plants keep their record — that is what makes propagation mortality
+  // an answerable question instead of a guess.
+  function listLost() {
+    return load().plants.filter(function (p) {
+      return alive(p) && p.status === 'lost';
+    }).sort(function (a, b) { return (b.lostAt || '').localeCompare(a.lostAt || ''); });
+  }
+
+  function markLost(id) {
+    var plant = getPlant(id);
+    if (!plant) return;
+    plant.status = 'lost';
+    plant.lostAt = new Date().toISOString();
+    plant.updatedAt = plant.lostAt;
+    persist();
+  }
+
+  function childrenOf(parentId) {
+    return load().plants.filter(function (p) {
+      return alive(p) && p.parentId === parentId;
     });
   }
 
@@ -104,6 +129,16 @@
       source: (fields.source || '').trim(),
       startedOn: fields.startedOn || today(),
       notes: (fields.notes || '').trim(),
+      // Specimen record: provenance, location, valuation, quarantine.
+      location: (fields.location || '').trim(),
+      parentId: fields.parentId || '',
+      propMethod: fields.propMethod || '',
+      ageYears: numberOrNull(fields.ageYears),
+      cost: numberOrNull(fields.cost),
+      estValue: numberOrNull(fields.estValue),
+      grade: fields.grade || '',
+      quarantineUntil: fields.quarantineUntil || '',
+      status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -115,7 +150,9 @@
   function updatePlant(id, fields) {
     var plant = getPlant(id);
     if (!plant) return null;
-    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes', 'mlPerMin'].forEach(function (key) {
+    ['name', 'species', 'stage', 'profileId', 'source', 'startedOn', 'notes', 'mlPerMin',
+     'location', 'parentId', 'propMethod', 'ageYears', 'cost', 'estValue', 'grade',
+     'quarantineUntil', 'status', 'lostAt'].forEach(function (key) {
       if (fields[key] != null) plant[key] = fields[key];
     });
     plant.updatedAt = new Date().toISOString();
@@ -160,7 +197,17 @@
     var entry = {
       id: fields.id || newId(10),
       plantId: plantId,
-      at: fields.at ? new Date(fields.at).toISOString() : new Date().toISOString(),
+      // A date-only value meaning "today" is stamped with the real time —
+      // otherwise a same-day treatment's re-entry interval would run from
+      // midnight and read as expired before the spray had dried. Backdated
+      // entries keep their historical date untouched.
+      at: (function () {
+        if (!fields.at) return new Date().toISOString();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fields.at) && fields.at === today()) {
+          return new Date().toISOString();
+        }
+        return new Date(fields.at).toISOString();
+      })(),
       ph: numberOrNull(fields.ph),
       moisture: numberOrNull(fields.moisture),
       ec: numberOrNull(fields.ec),
@@ -171,6 +218,9 @@
       light: numberOrNull(fields.light),
       chill: numberOrNull(fields.chill),
       vigor: numberOrNull(fields.vigor),
+      height: numberOrNull(fields.height),
+      canopy: numberOrNull(fields.canopy),
+      percolation: numberOrNull(fields.percolation),
       watered: !!fields.watered,
       waterMl: numberOrNull(fields.waterMl),
       fertilised: !!fields.fertilised,
@@ -185,11 +235,36 @@
       suckersRemoved: !!fields.suckersRemoved,
       graftChecked: !!fields.graftChecked,
       moved: fields.moved || '',
+      movedTo: (fields.movedTo || '').trim(),
+      // Styling, repot and treatment detail — the handbook forms' columns.
+      wired: !!fields.wired,
+      wireGauge: (fields.wireGauge || '').trim(),
+      wireRemoved: !!fields.wireRemoved,
+      rootPrunePct: numberOrNull(fields.rootPrunePct),
+      repotMix: (fields.repotMix || '').trim(),
+      potDesc: (fields.potDesc || '').trim(),
+      pestSeverity: fields.pestSeverity || '',
+      treated: !!fields.treated,
+      treatmentAgent: (fields.treatmentAgent || '').trim(),
+      reiHours: numberOrNull(fields.reiHours),
+      fertMethod: fields.fertMethod || '',
+      npk: (fields.npk || '').trim(),
+      minutes: numberOrNull(fields.minutes),
       auto: fields.auto || '',
       note: (fields.note || '').trim(),
       updatedAt: new Date().toISOString()
     };
     data.entries.push(entry);
+    // A location move recorded on a check becomes the plant's current spot;
+    // the entry itself is the movement history.
+    if (entry.movedTo) {
+      data.plants.forEach(function (p) {
+        if (p.id === plantId) {
+          p.location = entry.movedTo;
+          p.updatedAt = new Date().toISOString();
+        }
+      });
+    }
     persist();
     return entry;
   }
@@ -221,7 +296,8 @@
       });
   }
 
-  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill', 'vigor'];
+  var METRIC_KEYS = ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy',
+    'tempLow', 'tempHigh', 'humidity', 'light', 'chill', 'vigor'];
   var EVENT_KEYS = ['watered', 'fertilised', 'repotted', 'pruned', 'pestSeen', 'suckersRemoved'];
 
   // The most recent entry carrying each metric, and the most recent occurrence
@@ -245,9 +321,12 @@
   }
 
   var MILESTONES = [
-    { key: 'repotted', label: 'Repotted' },
-    { key: 'pruned', label: 'Pruned / wired' },
+    { key: 'repotted', label: 'Repotted', detail: 'repotMix' },
+    { key: 'pruned', label: 'Pruned' },
+    { key: 'wired', label: 'Wired', detail: 'wireGauge' },
+    { key: 'wireRemoved', label: 'Wire removed' },
     { key: 'pestSeen', label: 'Pest seen', detail: 'pestType', alert: true },
+    { key: 'treated', label: 'Treated', detail: 'treatmentAgent' },
     { key: 'suckersRemoved', label: 'Rootstock suckers removed' },
     { key: 'graftChecked', label: 'Graft line checked' }
   ];
@@ -264,6 +343,9 @@
       });
       if (e.moved) {
         out.push({ at: e.at, label: 'Moved ' + e.moved, alert: false, detail: '', entryId: e.id });
+      }
+      if (e.movedTo) {
+        out.push({ at: e.at, label: 'Moved to ' + e.movedTo, alert: false, detail: '', entryId: e.id });
       }
     });
     return out.sort(function (a, b) { return b.at.localeCompare(a.at); });
@@ -399,24 +481,26 @@
     var data = load();
     var names = {};
     data.plants.forEach(function (p) { names[p.id] = p; });
-    var header = ['plant_id', 'plant_name', 'species', 'profile', 'date',
-      'ph', 'moisture_pct', 'ec_ms_cm', 'growth_mm', 'temp_low_f', 'temp_high_f',
-      'humidity_pct', 'light_lux', 'chill_hours', 'vigor',
-      'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount',
-      'repotted', 'pruned', 'pest_seen', 'pest_type', 'suckers_removed',
-      'graft_checked', 'moved', 'auto', 'note'];
+    var header = ['plant_id', 'plant_name', 'species', 'profile', 'location', 'date',
+      'ph', 'moisture_pct', 'ec_ms_cm', 'percolation_s', 'growth_mm', 'height_in', 'canopy_in',
+      'temp_low_f', 'temp_high_f', 'humidity_pct', 'light_lux', 'chill_hours', 'vigor',
+      'watered', 'water_ml', 'fertilised', 'fertiliser', 'fert_amount', 'fert_method', 'npk',
+      'repotted', 'repot_mix', 'root_prune_pct', 'pot', 'pruned', 'wired', 'wire_gauge',
+      'wire_removed', 'pest_seen', 'pest_type', 'pest_severity', 'treated', 'treatment_agent',
+      'rei_hours', 'suckers_removed', 'graft_checked', 'moved', 'moved_to', 'minutes', 'auto', 'note'];
     var yn = function (v) { return v ? 'yes' : 'no'; };
     var lines = [header.join(',')];
     data.entries.slice().sort(function (a, b) { return a.at.localeCompare(b.at); })
       .forEach(function (e) {
         var plant = names[e.plantId] || {};
         lines.push([
-          e.plantId, plant.name, plant.species, plant.profileId, e.at,
-          e.ph, e.moisture, e.ec, e.growth, e.tempLow, e.tempHigh,
-          e.humidity, e.light, e.chill, e.vigor,
-          yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount,
-          yn(e.repotted), yn(e.pruned), yn(e.pestSeen), e.pestType, yn(e.suckersRemoved),
-          yn(e.graftChecked), e.moved, e.auto, e.note
+          e.plantId, plant.name, plant.species, plant.profileId, plant.location, e.at,
+          e.ph, e.moisture, e.ec, e.percolation, e.growth, e.height, e.canopy,
+          e.tempLow, e.tempHigh, e.humidity, e.light, e.chill, e.vigor,
+          yn(e.watered), e.waterMl, yn(e.fertilised), e.fertiliser, e.fertAmount, e.fertMethod, e.npk,
+          yn(e.repotted), e.repotMix, e.rootPrunePct, e.potDesc, yn(e.pruned), yn(e.wired), e.wireGauge,
+          yn(e.wireRemoved), yn(e.pestSeen), e.pestType, e.pestSeverity, yn(e.treated), e.treatmentAgent,
+          e.reiHours, yn(e.suckersRemoved), yn(e.graftChecked), e.moved, e.movedTo, e.minutes, e.auto, e.note
         ].map(csvCell).join(','));
       });
     return lines.join('\n');
@@ -438,6 +522,9 @@
 
   global.BonsaiStore = {
     listPlants: listPlants,
+    listLost: listLost,
+    markLost: markLost,
+    childrenOf: childrenOf,
     getPlant: getPlant,
     addPlant: addPlant,
     updatePlant: updatePlant,
