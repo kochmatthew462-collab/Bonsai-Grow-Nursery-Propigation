@@ -820,7 +820,7 @@ function viewExport() {
               href: `/api/projects/${project.project_id}/files/${encodeURIComponent(file.name)}?token=${encodeURIComponent(state.token)}`,
               class: 'row-title',
             }, file.name),
-            chip(`${Math.round(file.bytes / 1024)} KB`)));
+            chip(`${Math.round(file.bytes / 1024)} KB`))));
       }
     }).catch(() => { /* nothing exported yet */ });
   refreshFiles();

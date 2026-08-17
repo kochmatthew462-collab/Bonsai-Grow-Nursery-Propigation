@@ -1662,10 +1662,71 @@ function viewChartExport() {
 
 /* ---------------------------------------------------------------- reference */
 
+/*
+ * A live sandbox for the objective-language filter. Paste a sentence, see what
+ * fires and why. This is the fastest way to learn the rules, and learning them is
+ * the point — the rules apply everywhere a nurse charts, including in the EHR
+ * where this tool cannot follow them.
+ */
+function languageSandbox() {
+  const output = el('div', {});
+  const input = el('textarea', {
+    rows: 4,
+    placeholder: 'Patient appears drunk and refused meds. MD aware. Ate well.',
+  });
+
+  const run = () => guard(async () => {
+    const text = input.value;
+    if (!text.trim()) {
+      output.replaceChildren(el('p', { class: 'hint' }, 'Type something first.'));
+      return;
+    }
+    const result = await chartApi('/language-check', {
+      text, field_path: 'sandbox',
+    });
+    const children = [];
+    children.push(statBlock([
+      [String(result.flags.length), 'language'],
+      [String((result.phi || []).length), 'identifiers'],
+      [String((result.quote_suggestions || []).length), 'quote hints'],
+      [result.blocked ? 'Yes' : 'No', 'would block'],
+    ]));
+    if ((result.quoted_spans || []).length) {
+      children.push(notice(
+        `${result.quoted_spans.length} quoted span(s) found and skipped. `
+        + 'Everything inside quotation marks is exempt from every rule — what the '
+        + 'patient said is data, not your characterisation.', 'good'));
+    }
+    if (!result.flags.length && !(result.phi || []).length) {
+      children.push(notice('Nothing flagged.', 'good'));
+    }
+    for (const flag of result.flags) children.push(flagRow(flag));
+    for (const flag of result.phi || []) children.push(flagRow(flag));
+    for (const flag of result.quote_suggestions || []) children.push(flagRow(flag));
+    output.replaceChildren(...children);
+  });
+
+  input.addEventListener('input', () => {
+    clearTimeout(languageSandbox._timer);
+    languageSandbox._timer = setTimeout(run, 400);
+  });
+
+  return card('Try it',
+    el('p', { class: 'hint' },
+      'Paste a sentence and see what the filter says. Try it with and without '
+      + 'quotation marks around the patient\'s words — that difference is the '
+      + 'single most useful thing to know about this checker.'),
+    field('Text', input),
+    el('button', { class: 'button button-quiet', onclick: run }, 'Check'),
+    output);
+}
+
 function viewReference() {
   const ref = chartState.ref;
   return el('section', { class: 'stack' },
     disclosureBanner(),
+
+    languageSandbox(),
 
     card('Objective language filter',
       el('p', { class: 'hint' },

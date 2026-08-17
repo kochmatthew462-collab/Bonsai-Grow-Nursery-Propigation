@@ -694,7 +694,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               2,785 checks, all offline
+tests/               2,845 checks, all offline
 ```
 
 ## Tests
@@ -716,6 +716,7 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,447 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
+| `test_frontend.py` | 60 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_charting_flow.py` | 250 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
 
