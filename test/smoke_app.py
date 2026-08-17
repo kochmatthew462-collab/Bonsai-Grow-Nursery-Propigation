@@ -182,8 +182,9 @@ def main() -> int:
 
         goto_hash(f"#/p/{juniper}")
         page.wait_for_selector(".chart-svg")
+        # 12 tracked metrics, with low/high temperature merged into one card.
         check("bench profile charts every tracked factor",
-              page.locator(".chart-grid-cards > .card").count() == 8,
+              page.locator(".chart-grid-cards > .card").count() == 11,
               f"{page.locator('.chart-grid-cards > .card').count()} chart cards")
         check("this-month calendar shown",
               page.locator("h2:has-text('This month')").count() == 1)

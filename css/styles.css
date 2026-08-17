@@ -31,6 +31,12 @@
   --series-chill:     #008300;  /* slot 6 */
   --series-water:     #4a3aa7;  /* slot 7 */
   --series-vigor:     #4a3aa7;  /* slot 7 — never charted alongside watering */
+  /* Charts are one series per card, so hues repeat across cards rather than
+     minting a 9th hue; identity is carried by the card title and tile label,
+     never by colour alone. */
+  --series-height:      #4a3aa7;  /* slot 7 reused */
+  --series-canopy:      #e87ba4;  /* slot 5 reused */
+  --series-percolation: #e34948;  /* slot 8 reused */
   /* Low and high temperature share one chart, so they take the diverging
      cool/warm pair rather than two categorical slots. */
   --series-templow:   #2a78d6;
@@ -74,6 +80,9 @@
     --series-chill:     #008300;
     --series-water:     #9085e9;
     --series-vigor:     #9085e9;
+    --series-height:      #9085e9;
+    --series-canopy:      #d55181;
+    --series-percolation: #e66767;
     --series-templow:   #3987e5;
     --series-temphigh:  #e66767;
     --series-fert:      #008300;
@@ -616,6 +625,31 @@ ol.steps strong { color: var(--text-primary); }
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
+
+/* --------------------------------------------------------------- photos */
+
+.photo-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.photo-cell {
+  margin: 0;                /* figure's UA default margin would crush the cell */
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+.photo-cell img {
+  width: 100%;
+  border-radius: 6px;
+  display: block;
+}
+.photo-meta { font-size: 0.72rem; color: var(--text-secondary); }
+
+.lineage { font-size: 0.85rem; color: var(--text-secondary); }
+.lineage a { font-weight: 600; }
 
 /* -------------------------------------------------------------- weather */
 

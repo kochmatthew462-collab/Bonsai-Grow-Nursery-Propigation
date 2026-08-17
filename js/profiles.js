@@ -34,7 +34,10 @@
     humidity: { key: 'humidity', label: 'Humidity',    unit: '%',     decimals: 0, color: 'var(--series-humidity)', step: '1',   hint: 'relative humidity at the tree' },
     light:    { key: 'light',    label: 'Light',       unit: 'lux',   decimals: 0, color: 'var(--series-light)',    step: '100', hint: 'lux meter at the canopy, midday' },
     chill:    { key: 'chill',    label: 'Chill hours', unit: 'h',     decimals: 0, color: 'var(--series-chill)',    step: '1',   hint: 'running hours below 45 °F this winter' },
-    vigor:    { key: 'vigor',    label: 'Vigor',       unit: '/5',    decimals: 0, color: 'var(--series-vigor)',    step: '1',   hint: 'quarterly audit, 1-5 — no styling below 4' }
+    vigor:    { key: 'vigor',    label: 'Vigor',       unit: '/5',    decimals: 0, color: 'var(--series-vigor)',    step: '1',   hint: 'quarterly audit, 1-5 — no styling below 4' },
+    height:   { key: 'height',   label: 'Height',      unit: 'in',    decimals: 1, color: 'var(--series-height)',   step: '0.5', hint: 'soil line to apex' },
+    canopy:   { key: 'canopy',   label: 'Canopy',      unit: 'in',    decimals: 0, color: 'var(--series-canopy)',   step: '1',   hint: 'widest spread; measure the same axis each time' },
+    percolation: { key: 'percolation', label: 'Percolation', unit: 's', decimals: 0, color: 'var(--series-percolation)', step: '1', hint: 'seconds for surface water to clear — the book’s monthly test' }
   };
 
   var PAIRED_CHARTS = [{ id: 'temp', title: 'Air temperature', keys: ['tempLow', 'tempHigh'], unit: '°F', decimals: 0 }];
@@ -69,10 +72,10 @@
   var BENCH_DRIP = {
     nominalMlPerMin: 11.7,   // 0.7 L/hr per emitter, the kit's nominal figure
     seasons: [
-      { label: 'Winter', from: '11-01', to: '03-14', days: [2, 5],             minutes: 6 },
-      { label: 'Spring', from: '03-15', to: '05-31', days: [1, 3, 5],          minutes: 8 },
-      { label: 'Summer', from: '06-01', to: '09-15', days: [1, 2, 3, 4, 5, 6], minutes: 8 },
-      { label: 'Autumn', from: '09-16', to: '10-31', days: [1, 3, 5],          minutes: 8 }
+      { label: 'Winter', from: '11-01', to: '03-14', days: [2, 5],             minutes: 6, lightHours: 12 },
+      { label: 'Spring', from: '03-15', to: '05-31', days: [1, 3, 5],          minutes: 8, lightHours: 14 },
+      { label: 'Summer', from: '06-01', to: '09-15', days: [1, 2, 3, 4, 5, 6], minutes: 8, lightHours: 16 },
+      { label: 'Autumn', from: '09-16', to: '10-31', days: [1, 3, 5],          minutes: 8, lightHours: 14 }
     ]
   };
 
@@ -113,7 +116,7 @@
       setting: 'indoor',
       source: 'Bench Environment Packet, with class defaults from The Complete Bonsai Grower',
       summary: 'The one set of numbers a single-circuit bench runs on. Every tree sharing the light, drip, humidifier and probe is judged against this median; the per-species profiles carry the tolerances.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'light', 'vigor'],
       restMonths: [10, 11, 0, 1, 2],
       winterFloor: { tempF: 55, note: 'Bench cold floor 55 °F — never below, any tree. Governed by the Gmelina.' },
       bands: {
@@ -121,6 +124,7 @@
         moisture: { good: [35, 65],   warn: [30, 75],   target: 50,
                     note: 'BENCH meter convention for the akadama–pumice–lava mix: running 35–65%, water at 33%. NOTE: the BOOK quotes a 20–28% VWC trigger — a different scale for the same thing. These bench numbers follow the packet written for this bench and its probe; do not mix the two conventions.' },
         ec:       { good: [0.5, 1.5], warn: [0.3, 2.0], note: 'BOOK leachate band 0.5–1.5; flush above 2.0. Development-phase trees run at the top of it.' },
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
         tempLow:  { good: [62, 68],   warn: [55, 72],   note: 'Tropicals stall below 55 °F nights.' },
         tempHigh: { good: [72, 78],   warn: [65, 85] },
         humidity: { good: [50, 65],   warn: [45, 70],   note: 'Winter floor 45%. Sustained above 70% is fungus risk.' },
@@ -167,13 +171,14 @@
       setting: 'indoor',
       source: 'Bench Environment Packet',
       summary: 'Fast, thirsty, heavy feeder; warmth-loving. Governs the bench cold floor at 55 °F and takes the warmest upper shelf.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
       restMonths: [10, 11, 0, 1, 2],
       winterFloor: { tempF: 55, note: 'Stress floor 55 °F. Growth stalls below ~65 °F; foliage damage below 45 °F.' },
       bands: {
         ph:       { good: [6.0, 6.8], warn: [5.8, 7.0] },
         moisture: { good: [45, 65],   warn: [35, 75],   note: 'Bench meter scale. Water at 35–40%; the wettest tree on the bench and never let it go fully dry.' },
         ec:       { good: [1.0, 1.5], warn: [0.6, 2.0], note: 'Heaviest feeder on the bench; development-phase rates.' },
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
         tempLow:  { good: [62, 70],   warn: [55, 74] },
         tempHigh: { good: [70, 85],   warn: [65, 88] },
         humidity: { good: [50, 65],   warn: [45, 70] },
@@ -200,13 +205,14 @@
       setting: 'indoor',
       source: 'Bench Environment Packet',
       summary: 'The most forgiving tree on the bench. Scissors-only styling — conventional wire fails on this species.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
       restMonths: [10, 11, 0, 1, 2],
       winterFloor: { tempF: 50, note: 'Stress floor 50 °F — the most tolerant tree on the bench.' },
       bands: {
         ph:       { good: [6.0, 6.5], warn: [5.8, 7.0] },
         moisture: { good: [40, 60],   warn: [30, 70],   note: 'Bench meter scale. Water at 30–35%; likes a slight dry-down between waterings.' },
         ec:       { good: [0.6, 1.2], warn: [0.4, 2.0] },
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
         tempLow:  { good: [60, 68],   warn: [50, 72] },
         tempHigh: { good: [65, 80],   warn: [60, 85] },
         humidity: { good: [50, 65],   warn: [45, 70] },
@@ -235,13 +241,14 @@
       setting: 'indoor',
       source: 'Bench Environment Packet, with mix chemistry from The Complete Bonsai Grower',
       summary: 'Steady and reliable, but hates cold drafts and being moved. Grafted — the graft line needs watching.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
       restMonths: [10, 11, 0, 1, 2],
       winterFloor: { tempF: 59, note: 'Chill drafts under 59 °F trigger leaf drop.' },
       bands: {
         ph:       { good: [6.0, 6.5], warn: [5.8, 7.0], note: 'BOOK ficus mix chemistry: pH 6.0–6.5, EC 0.8–1.5.' },
         moisture: { good: [40, 60],   warn: [30, 70],   note: 'Bench meter scale. Water at 30–40%; even moisture, brief dry-downs fine.' },
         ec:       { good: [0.8, 1.5], warn: [0.4, 2.0] },
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
         tempLow:  { good: [62, 70],   warn: [59, 74] },
         tempHigh: { good: [68, 85],   warn: [64, 88] },
         humidity: { good: [50, 65],   warn: [45, 70] },
@@ -273,13 +280,14 @@
       setting: 'indoor',
       source: 'Bench Environment Packet, with winter floor from The Complete Bonsai Grower',
       summary: 'The driest and coolest tree on the bench, and its sun-hunger canary. Wants a leaner, dimmer winter rest.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'vigor'],
       restMonths: [10, 11, 0, 1, 2],
       winterFloor: { tempF: 30, note: 'BOOK: protect roots below 28–30 °F; a brief 25 °F is survivable. A cool bright rest at 35–50 °F is optional, not required.' },
       bands: {
         ph:       { good: [5.5, 7.0], warn: [5.2, 7.4] },
         moisture: { good: [35, 55],   warn: [25, 65],   note: 'Bench meter scale. Water at 25–35%; driest tree on the bench and rot-prone if wet.' },
         ec:       { good: [0.6, 1.2], warn: [0.4, 2.0] },
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
         tempLow:  { good: [60, 68],   warn: [41, 72],
                     rest: { good: [35, 50], warn: [30, 60], note: 'Optional cool bright rest, Nov–Feb.' } },
         tempHigh: { good: [65, 85],   warn: [60, 88] },
@@ -341,7 +349,7 @@
       setting: 'seasonal',
       source: 'Bergamot in Central Maryland',
       summary: 'Outdoors roughly May 10–20 to Oct 1–15, then a cool bright rest indoors at 45–58 °F. The rest is not storage — it is what induces the following spring’s bloom.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'light', 'vigor'],
       restMonths: [10, 11, 0, 1],
       winterFloor: { tempF: 40, note: 'Never below 40 °F at pot level. Frost is fatal to citrus.' },
       bands: {
@@ -350,6 +358,7 @@
         moisture: { good: [20, 28],   warn: [15, 40],
                     note: 'The handbook rule is the finger test — water when the top 2–3 in are dry in summer, the top 3–4 in in winter, with a 20% leaching fraction every time. The band shown is the BOOK class default of 20–28% VWC on a capacitance probe, for when you prefer a meter.' },
         ec:       { good: [0.5, 1.5], warn: [0.3, 2.0],
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
                     note: 'Runoff EC persistently above 2.0 mS/cm means salt accumulation — deep flush 2–3× container volume.' },
         tempLow:  { good: [55, 95],   warn: [50, 100],
                     rest: { good: [45, 58], warn: [40, 62], note: 'Winter rest 45–58 °F; never below 40 °F at pot level.' } },
@@ -431,7 +440,7 @@
       setting: 'seasonal',
       source: 'The Arbequina Olive in Central Maryland',
       summary: 'Outdoors mid-April to late October, banking chill, then a cool bright winter indoors at 50–55 °F. Chill is what decides whether there is a crop at all — and it fails from being too warm as readily as too cold.',
-      track: ['ph', 'moisture', 'ec', 'growth', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill', 'vigor'],
+      track: ['ph', 'moisture', 'ec', 'percolation', 'growth', 'height', 'canopy', 'tempLow', 'tempHigh', 'humidity', 'light', 'chill', 'vigor'],
       restMonths: [10, 11, 0, 1],
       winterFloor: { tempF: 40, note: 'Never below 40 °F at pot level. Young trees are damaged at 25–28 °F; established trees take a brief 15 °F.' },
       bands: {
@@ -440,6 +449,7 @@
         moisture: { good: [15, 25],   warn: [10, 35],
                     note: 'The handbook rule is the finger test — top 2–3 in completely dry before re-watering, 20% leaching fraction. The band shown sits a step below the BOOK class default because this tree wants to dry down further than anything else you track.' },
         ec:       { good: [0.5, 1.5], warn: [0.3, 2.0],
+        percolation: { good: [0, 5], warn: [0, 15], note: 'Book test: 5-second pass, 15-second fail. A pot that ponds past 15 s goes on the repot list — mixes die by collapse, not by calendar.' },
                     note: 'Deep flush 2–3× container volume monthly in season, and always before the move indoors and again in early spring.' },
         tempLow:  { good: [50, 95],   warn: [40, 100],
                     rest: { good: [50, 55], warn: [45, 58], note: 'Chill band 50–55 °F sustained. Induction fails at 39 °F and at 64 °F alike.' } },

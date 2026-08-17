@@ -18,18 +18,26 @@
   var sync = global.BonsaiSync;
   var calendar = global.BonsaiCalendar;
   var weather = global.BonsaiWeather;
+  var photos = global.BonsaiPhotos;
   var QR = global.BonsaiQR;
 
   var METRICS = profiles.metrics;
-  var STAGES = ['cutting', 'air layer', 'seedling', 'stem graft', 'nursery stock', 'in training', 'refinement'];
+  var STAGES = ['cutting', 'air layer', 'seedling', 'stem graft', 'nursery stock',
+    'in training', 'refinement', 'mature specimen', 'exhibition-ready'];
+  var GRADES = ['', 'pre-bonsai', 'early refinement', 'refined', 'specimen', 'exhibition-ready'];
+  var PROP_METHODS = ['', 'seed', 'cutting — softwood', 'cutting — hardwood', 'cutting — semi-ripe',
+    'air layer', 'graft', 'collected (yamadori)', 'nursery stock', 'imported'];
+  var FERT_METHODS = ['', 'drench', 'foliar', 'slow-release / pellets', 'organic tea'];
+  // Wire bites fast in season — the ficus page says inspect every two weeks.
+  var WIRE_INSPECT_DAYS = 14;
   var PESTS = ['spider mites', 'scale', 'mealybugs', 'fungus gnats', 'aphids',
     'citrus leaf miner', 'olive knot', 'peacock spot', 'other'];
 
   // Metrics grouped for the log form, so a phone-sized form stays readable.
   var FORM_GROUPS = [
-    { title: 'Soil', keys: ['ph', 'moisture', 'ec'] },
+    { title: 'Soil', keys: ['ph', 'moisture', 'ec', 'percolation'] },
     { title: 'Air and light', keys: ['tempLow', 'tempHigh', 'humidity', 'light', 'chill'] },
-    { title: 'Growth and vigor', keys: ['growth', 'vigor'] }
+    { title: 'Growth and vigor', keys: ['growth', 'height', 'canopy', 'vigor'] }
   ];
 
   var STATUS_GLYPH = { good: '✓', warn: '▲', bad: '✕' };
@@ -166,7 +174,11 @@
             plant.species ? h('div', { class: 'hint', text: plant.species }) : null
           ]),
           h('td', { text: profile.id === 'generic' ? '—' : profile.name }),
-          h('td', {}, [statusChip(worstStatus(plant.id)) || h('span', { class: 'hint', text: '—' })]),
+          h('td', {}, [
+            statusChip(worstStatus(plant.id)) || h('span', { class: 'hint', text: '—' }),
+            quarantineStatus(plant) ? document.createTextNode(' ') : null,
+            quarantineStatus(plant) ? statusChip({ level: 'bad', label: 'quarantine' }) : null
+          ]),
           h('td', { class: 'num', text: latest.ph ? charts.trimNumber(latest.ph.ph, 1) : '—' }),
           h('td', { class: 'num', text: latest.moisture ? charts.trimNumber(latest.moisture.moisture, 0) + '%' : '—' }),
           h('td', { class: 'num', text: wateredDays == null ? '—' : wateredDays + 'd ago' }),
@@ -191,6 +203,22 @@
             body
           ])
         ])
+      ]));
+    }
+
+    var lost = store.listLost();
+    if (lost.length) {
+      var lostBody = h('div', { class: 'watch-list' });
+      lost.forEach(function (plant) {
+        lostBody.appendChild(h('p', { class: 'hint' }, [
+          h('a', { href: '#/p/' + plant.id, text: plant.name }),
+          document.createTextNode(' — lost ' + (plant.lostAt ? charts.formatDateLong(plant.lostAt) : '') +
+            (plant.propMethod ? ' · ' + plant.propMethod : ''))
+        ]));
+      });
+      view.appendChild(h('details', { class: 'table-view' }, [
+        h('summary', { text: 'Lost plants (' + lost.length + ') — kept for the propagation record' }),
+        lostBody
       ]));
     }
 
@@ -229,15 +257,45 @@
       field('Started on', startedOn)
     ]));
     form.appendChild(field('Notes', notes));
+
+    var parent = h('select', { name: 'parentId' }, [h('option', { value: '', text: '—' })].concat(
+      store.listPlants().map(function (p) { return h('option', { value: p.id, text: p.name }); })
+    ));
+    var propMethod = h('select', { name: 'propMethod' }, PROP_METHODS.map(function (m) {
+      return h('option', { value: m, text: m || '—' });
+    }));
+    var location = h('input', { type: 'text', name: 'location', placeholder: 'Bench 2, top shelf' });
+    var quarantine = h('input', { type: 'checkbox', name: 'quarantine' });
+
+    form.appendChild(h('details', { class: 'table-view' }, [
+      h('summary', { text: 'Provenance, location and quarantine' }),
+      h('div', { class: 'field-grid' }, [
+        field('Location', location),
+        field('Parent / mother stock', parent, 'links propagation lineage'),
+        field('Propagation method', propMethod),
+        h('label', { class: 'checkbox' }, [quarantine,
+          document.createTextNode('New stock — quarantine 4 weeks (own shelf, own tools)')])
+      ])
+    ]));
+
     form.appendChild(h('div', { class: 'button-row' }, [
       h('button', { type: 'submit', class: 'button button-primary', text: 'Add plant' })
     ]));
     form.addEventListener('submit', function (event) {
       event.preventDefault();
+      var quarantineUntil = '';
+      if (quarantine.checked) {
+        var until = new Date(Date.now() + 28 * 86400000);
+        quarantineUntil = until.getFullYear() + '-' +
+          String(until.getMonth() + 1).padStart(2, '0') + '-' +
+          String(until.getDate()).padStart(2, '0');
+      }
       var plant = store.addPlant({
         name: name.value, species: species.value, stage: stage.value,
         profileId: profile.value, source: source.value,
-        startedOn: startedOn.value, notes: notes.value
+        startedOn: startedOn.value, notes: notes.value,
+        location: location.value, parentId: parent.value,
+        propMethod: propMethod.value, quarantineUntil: quarantineUntil
       });
       global.location.hash = '#/p/' + plant.id;
     });
@@ -282,6 +340,7 @@
     ]));
 
     view.appendChild(profileCard(plant, profile));
+    view.appendChild(specimenCard(plant, profile));
     var monthCard = calendarCard(profile);
     if (monthCard) view.appendChild(monthCard);
     var tasks = plantTasksCard(plant, profile);
@@ -335,18 +394,40 @@
     charts.careTimeline(careHolder, { rows: careRows });
 
     view.appendChild(milestoneCard(id));
+    view.appendChild(photoCard(plant));
     if (profile.watch && profile.watch.length) view.appendChild(watchCard(profile));
     view.appendChild(historyCard(id, entries, profile));
     view.appendChild(labelCard(plant));
 
     view.appendChild(h('div', { class: 'card no-print' }, [
       h('h2', { text: 'Manage plant' }),
+      h('p', {
+        class: 'hint',
+        text: 'A dead or discarded tree should be marked lost, not deleted — the record is what makes ' +
+          'propagation success rates and the problem log answerable later.'
+      }),
       h('div', { class: 'button-row' }, [
+        plant.status !== 'lost' ? h('button', {
+          class: 'button', text: 'Mark as lost',
+          onclick: function () {
+            if (global.confirm('Mark "' + plant.name + '" as lost? Its record and readings are kept; it leaves the active list and the label sheet.')) {
+              store.markLost(plant.id);
+              global.location.hash = '#/';
+            }
+          }
+        }) : h('button', {
+          class: 'button', text: 'Restore to active',
+          onclick: function () {
+            store.updatePlant(plant.id, { status: 'active', lostAt: '' });
+            render();
+          }
+        }),
         h('button', {
           class: 'button button-danger',
           text: 'Delete this plant and its readings',
           onclick: function () {
             if (global.confirm('Delete "' + plant.name + '" and all of its readings? This cannot be undone.')) {
+              photos.removeAllFor(plant.id);
               store.deletePlant(plant.id);
               global.location.hash = '#/';
             }
@@ -390,11 +471,13 @@
       var entry = latest[key];
       if (!metric || !entry) return;
       var value = entry[key];
+      var sub = charts.formatDate(entry.at);
+      if (key === 'light') sub += lightDerivation(profile, value);
       row.appendChild(statTile(
         metric.label,
         charts.trimNumber(value, metric.decimals),
         metric.unit,
-        charts.formatDate(entry.at),
+        sub,
         metric.color,
         profiles.evaluate(profile, key, value)
       ));
@@ -641,6 +724,45 @@
     if (profile.setting === 'seasonal') milestoneFields.push(field('Moved', moved));
     form.appendChild(h('div', { class: 'field-grid' }, milestoneFields));
 
+    var wired = h('input', { type: 'checkbox', name: 'wired' });
+    var wireGauge = h('input', { type: 'text', name: 'wireGauge', placeholder: '2 mm aluminium' });
+    var wireRemoved = h('input', { type: 'checkbox', name: 'wireRemoved' });
+    var rootPrunePct = h('input', { type: 'number', name: 'rootPrunePct', step: '5', min: '0', max: '80', placeholder: '25' });
+    var repotMix = h('input', { type: 'text', name: 'repotMix', placeholder: '1:1:1 akadama–pumice–lava' });
+    var potDesc = h('input', { type: 'text', name: 'potDesc', placeholder: 'unglazed oval, 8 in' });
+    var pestSeverity = h('select', { name: 'pestSeverity' }, ['', 'light', 'moderate', 'severe'].map(function (v) {
+      return h('option', { value: v, text: v || '—' });
+    }));
+    var treated = h('input', { type: 'checkbox', name: 'treated' });
+    var treatmentAgent = h('input', { type: 'text', name: 'treatmentAgent', placeholder: 'insecticidal soap · horticultural oil' });
+    var reiHours = h('input', { type: 'number', name: 'reiHours', step: '1', min: '0', placeholder: '12' });
+    var fertMethod = h('select', { name: 'fertMethod' }, FERT_METHODS.map(function (v) {
+      return h('option', { value: v, text: v || '—' });
+    }));
+    var npk = h('input', { type: 'text', name: 'npk', placeholder: '10-10-10' });
+    var movedTo = h('input', { type: 'text', name: 'movedTo', placeholder: 'Bench 2 · south wall · winter room' });
+    var minutes = h('input', { type: 'number', name: 'minutes', step: '5', min: '0', placeholder: '20' });
+
+    form.appendChild(h('details', { class: 'table-view' }, [
+      h('summary', { text: 'Detail — styling, repot, treatment, location, time' }),
+      h('div', { class: 'field-grid' }, [
+        h('label', { class: 'checkbox' }, [wired, document.createTextNode('Wired')]),
+        field('Wire gauge', wireGauge),
+        h('label', { class: 'checkbox' }, [wireRemoved, document.createTextNode('Wire removed')]),
+        field('Root pruned (%)', rootPrunePct, 'with a repot'),
+        field('Repot mix', repotMix),
+        field('Pot', potDesc),
+        field('Pest severity', pestSeverity),
+        h('label', { class: 'checkbox' }, [treated, document.createTextNode('Treated')]),
+        field('Agent / product', treatmentAgent, 'goes to the compliance CSV'),
+        field('REI (hours)', reiHours, 're-entry interval from the label'),
+        field('Feed method', fertMethod),
+        field('N-P-K', npk),
+        field('Moved to', movedTo, 'updates the plant’s location'),
+        field('Time spent (min)', minutes, 'builds the labor total')
+      ])
+    ]));
+
     var note = h('input', { type: 'text', name: 'note', placeholder: 'Back buds opening on the lower trunk.' });
     form.appendChild(field('Note', note));
     form.appendChild(h('div', { class: 'button-row' }, [
@@ -656,7 +778,13 @@
         repotted: repotted.checked, pruned: pruned.checked,
         pestSeen: pestSeen.checked, pestType: pestType.value,
         graftChecked: graftChecked.checked, suckersRemoved: suckersRemoved.checked,
-        moved: moved.value, note: note.value
+        moved: moved.value, note: note.value,
+        wired: wired.checked, wireGauge: wireGauge.value, wireRemoved: wireRemoved.checked,
+        rootPrunePct: rootPrunePct.value, repotMix: repotMix.value, potDesc: potDesc.value,
+        pestSeverity: pestSeverity.value, treated: treated.checked,
+        treatmentAgent: treatmentAgent.value, reiHours: reiHours.value,
+        fertMethod: fertMethod.value, npk: npk.value,
+        movedTo: movedTo.value, minutes: minutes.value
       };
       var measured = false;
       Object.keys(inputs).forEach(function (key) {
@@ -665,7 +793,8 @@
       });
 
       var acted = watered.checked || fertilised.checked || repotted.checked || pruned.checked ||
-        pestSeen.checked || graftChecked.checked || suckersRemoved.checked || moved.value || note.value;
+        pestSeen.checked || graftChecked.checked || suckersRemoved.checked || moved.value || note.value ||
+        wired.checked || wireRemoved.checked || treated.checked || movedTo.value || minutes.value;
       if (!measured && !acted) {
         global.alert('Nothing to save — record at least one measurement, a care action, or a note.');
         return;
@@ -912,7 +1041,9 @@
       h('p', {
         class: 'hint',
         text: 'The JSON file is the complete nursery and is what you import below. ' +
-          'The CSV is one row per check with every factor as a column, ready for a PivotTable.'
+          'The CSV is one row per check with every factor as a column — including treatments, ' +
+          'agents and re-entry intervals, so it doubles as the chemical application report. ' +
+          'Photos are not included in either: they stay on the device that took them.'
       })
     ]));
 
@@ -1059,6 +1190,10 @@
         h('div', { class: 'watch-item' }, [
           h('div', { class: 'watch-title', text: 'The code is the key' }),
           h('div', { class: 'watch-body', text: 'There are no usernames. Anyone holding the nursery code can read and write the nursery, exactly like an unguessable share link. A generated code is about 120 bits, so it will not be guessed — but do not post it anywhere public.' })
+        ]),
+        h('div', { class: 'watch-item' }, [
+          h('div', { class: 'watch-title', text: 'Photos stay on the device' }),
+          h('div', { class: 'watch-body', text: 'Sync ships the whole nursery as one document with a 1 MB ceiling, and photos would blow through it. So the readings, logs and completions sync; the pixels do not. Take reference photos on the device you review them on.' })
         ]),
         h('div', { class: 'watch-item' }, [
           h('div', { class: 'watch-title', text: 'Keep exporting occasionally' }),
@@ -1256,6 +1391,237 @@
           }
         })
       ])
+    ]);
+  }
+
+  /* ------------------------------------------------- specimen derivations */
+
+  function quarantineStatus(plant) {
+    if (!plant.quarantineUntil) return null;
+    var until = new Date(plant.quarantineUntil + 'T23:59:59');
+    if (until < new Date()) return null;
+    return { level: 'bad', label: 'quarantine until ' + plant.quarantineUntil };
+  }
+
+  // Wire is on if the newest wire event is a wiring, not a removal.
+  function wireStatus(plantId) {
+    var last = null;
+    store.entriesFor(plantId).forEach(function (e) {
+      if (e.wired) last = { on: true, at: e.at, gauge: e.wireGauge };
+      if (e.wireRemoved) last = { on: false, at: e.at };
+    });
+    if (!last || !last.on) return null;
+    var days = store.daysSince(last.at);
+    return {
+      days: days,
+      gauge: last.gauge,
+      level: days >= WIRE_INSPECT_DAYS ? 'warn' : 'good',
+      label: 'wire on ' + days + 'd' + (days >= WIRE_INSPECT_DAYS ? ' — inspect for bite' : '')
+    };
+  }
+
+  // Re-entry interval from the newest treatment that declared one.
+  function reiStatus(plantId) {
+    var active = null;
+    store.entriesFor(plantId).forEach(function (e) {
+      if (!e.treated || e.reiHours == null) return;
+      var until = new Date(new Date(e.at).getTime() + e.reiHours * 3600000);
+      if (until > new Date() && (!active || until > active.until)) {
+        active = { until: until, agent: e.treatmentAgent };
+      }
+    });
+    if (!active) return null;
+    return {
+      level: 'bad',
+      label: 'REI until ' + active.until.toLocaleString(undefined,
+        { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) +
+        (active.agent ? ' (' + active.agent + ')' : '')
+    };
+  }
+
+  function laborHours(plantId) {
+    var minutes = 0;
+    store.entriesFor(plantId).forEach(function (e) { if (e.minutes != null) minutes += e.minutes; });
+    return minutes ? Math.round(minutes / 6) / 10 : 0;
+  }
+
+  function lastRepot(plantId) {
+    var last = null;
+    store.entriesFor(plantId).forEach(function (e) { if (e.repotted) last = e.at; });
+    return last;
+  }
+
+  // Derived light readout — the book's own conversions. Under the bench LEDs
+  // the photoperiod is known, so DLI is real; outdoors only the instantaneous
+  // PPFD is honest, since one midday lux reading is not a daily integral.
+  function lightDerivation(profile, lux) {
+    if (lux == null) return '';
+    if (profile.drip && profile.drip.schedule) {
+      var season = null;
+      var monthDay = new Date().toISOString().slice(5, 10);
+      profile.drip.schedule.seasons.forEach(function (item) {
+        var inRange = item.from <= item.to
+          ? (monthDay >= item.from && monthDay <= item.to)
+          : (monthDay >= item.from || monthDay <= item.to);
+        if (inRange) season = item;
+      });
+      if (season && season.lightHours) {
+        var ppfd = lux / 70;   // white LED ÷70, BOOK
+        var dli = ppfd * season.lightHours * 3600 / 1e6;
+        return ' · ≈' + Math.round(ppfd) + ' µmol · DLI ≈ ' +
+          (Math.round(dli * 10) / 10) + ' mol (' + season.lightHours + ' h)';
+      }
+    }
+    return ' · ≈' + Math.round(lux / 54) + ' µmol midday (sun ÷54)';
+  }
+
+  /* -------------------------------------------------------- specimen card */
+
+  function specimenCard(plant, profile) {
+    var location = h('input', { type: 'text', name: 'location', value: plant.location || '', placeholder: 'Bench 2, top shelf · south wall' });
+    var parent = h('select', { name: 'parentId' }, [h('option', { value: '', text: '—' })].concat(
+      store.listPlants().filter(function (p) { return p.id !== plant.id; }).map(function (p) {
+        return h('option', { value: p.id, text: p.name, selected: p.id === plant.parentId });
+      })
+    ));
+    var propMethod = h('select', { name: 'propMethod' }, PROP_METHODS.map(function (m) {
+      return h('option', { value: m, text: m || '—', selected: m === (plant.propMethod || '') });
+    }));
+    var ageYears = h('input', { type: 'number', name: 'ageYears', step: '1', min: '0', value: plant.ageYears == null ? '' : plant.ageYears });
+    var cost = h('input', { type: 'number', name: 'cost', step: '1', min: '0', value: plant.cost == null ? '' : plant.cost });
+    var estValue = h('input', { type: 'number', name: 'estValue', step: '1', min: '0', value: plant.estValue == null ? '' : plant.estValue });
+    var grade = h('select', { name: 'grade' }, GRADES.map(function (g) {
+      return h('option', { value: g, text: g || '—', selected: g === (plant.grade || '') });
+    }));
+    var quarantine = h('input', { type: 'date', name: 'quarantineUntil', value: plant.quarantineUntil || '' });
+
+    var chips = h('div', { class: 'button-row' });
+    var q = quarantineStatus(plant);
+    if (q) chips.appendChild(statusChip(q));
+    var wire = wireStatus(plant.id);
+    if (wire) chips.appendChild(statusChip(wire));
+    var rei = reiStatus(plant.id);
+    if (rei) chips.appendChild(statusChip(rei));
+
+    var facts = [];
+    var parentPlant = plant.parentId ? store.getPlant(plant.parentId) : null;
+    if (parentPlant) {
+      facts.push(h('p', { class: 'lineage' }, [
+        document.createTextNode('Propagated from '),
+        h('a', { href: '#/p/' + parentPlant.id, text: parentPlant.name }),
+        document.createTextNode(plant.propMethod ? ' · ' + plant.propMethod : '')
+      ]));
+    }
+    var children = store.childrenOf(plant.id);
+    if (children.length) {
+      var aliveCount = children.filter(function (c) { return c.status !== 'lost'; }).length;
+      var line = h('p', { class: 'lineage' }, [document.createTextNode(
+        children.length + (children.length === 1 ? ' propagation' : ' propagations') +
+        ' · ' + aliveCount + ' alive: ')]);
+      children.forEach(function (child, index) {
+        if (index) line.appendChild(document.createTextNode(', '));
+        line.appendChild(h('a', { href: '#/p/' + child.id, text: child.name }));
+        if (child.status === 'lost') line.appendChild(document.createTextNode(' (lost)'));
+      });
+      facts.push(line);
+    }
+    var hours = laborHours(plant.id);
+    var repotAt = lastRepot(plant.id);
+    var factBits = [];
+    if (plant.location) factBits.push('at ' + plant.location);
+    if (hours) factBits.push(hours + ' h logged work');
+    if (repotAt) factBits.push('last repot ' + charts.formatDateLong(repotAt));
+    if (plant.cost != null || plant.estValue != null) {
+      factBits.push('cost ' + (plant.cost == null ? '—' : plant.cost) +
+        ' · est. value ' + (plant.estValue == null ? '—' : plant.estValue));
+    }
+    if (factBits.length) facts.push(h('p', { class: 'hint', text: factBits.join(' · ') }));
+
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [h('h2', { text: 'Specimen record' }), chips]),
+      facts.length ? h('div', {}, facts) : null,
+      h('details', { class: 'table-view no-print' }, [
+        h('summary', { text: 'Edit identity, provenance and valuation' }),
+        h('div', { class: 'field-grid' }, [
+          field('Location', location, 'Changes are also logged when you fill “Moved to” on a check.'),
+          field('Parent / mother stock', parent),
+          field('Propagation method', propMethod),
+          field('Estimated age (years)', ageYears),
+          field('Cost', cost),
+          field('Est. value', estValue),
+          field('Grade / tier', grade),
+          field('Quarantine until', quarantine, 'Handbooks: 3–4 weeks for anything new, in or out.')
+        ]),
+        h('div', { class: 'button-row' }, [
+          h('button', {
+            class: 'button button-primary', text: 'Save record',
+            onclick: function () {
+              store.updatePlant(plant.id, {
+                location: location.value, parentId: parent.value, propMethod: propMethod.value,
+                ageYears: ageYears.value === '' ? null : Number(ageYears.value),
+                cost: cost.value === '' ? null : Number(cost.value),
+                estValue: estValue.value === '' ? null : Number(estValue.value),
+                grade: grade.value, quarantineUntil: quarantine.value
+              });
+              render();
+            }
+          })
+        ])
+      ])
+    ]);
+  }
+
+  /* ----------------------------------------------------------- photo card */
+
+  function photoCard(plant) {
+    var list = photos.photosFor(plant.id);
+    var picker = h('input', { type: 'file', name: 'photoFile', accept: 'image/*', capture: 'environment' });
+    var note = h('input', { type: 'text', name: 'photoNote', placeholder: 'front, after wiring' });
+    var status = h('p', { class: 'hint' });
+
+    var used = photos.totalBytes();
+    var meter = 'Photos: ' + (Math.round(used / 104857.6) / 10) + ' MB of ~' +
+      Math.round(photos.maxBytes / 1048576) + ' MB. They stay on this device — ' +
+      'downscaled, stripped of EXIF, and never included in sync or the JSON backup.';
+
+    var grid = h('div', { class: 'photo-grid' });
+    list.forEach(function (photo) {
+      grid.appendChild(h('figure', { class: 'photo-cell' }, [
+        h('img', { src: photo.data, alt: photo.note || ('Photo from ' + charts.formatDateLong(photo.at)) }),
+        h('figcaption', { class: 'photo-meta', text: charts.formatDateLong(photo.at) + (photo.note ? ' · ' + photo.note : '') }),
+        h('div', { class: 'button-row no-print' }, [
+          h('button', {
+            class: 'button button-quiet button-danger', text: 'Delete',
+            onclick: function () {
+              if (global.confirm('Delete this photo?')) { photos.removePhoto(plant.id, photo.id); render(); }
+            }
+          })
+        ])
+      ]));
+    });
+
+    picker.addEventListener('change', function () {
+      var file = picker.files && picker.files[0];
+      if (!file) return;
+      photos.addPhoto(plant.id, file, note.value).then(function () {
+        render();
+      }).catch(function (error) {
+        status.textContent = error.message;
+      });
+    });
+
+    return h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [
+        h('h2', { text: 'Photo timeline' }),
+        h('span', { class: 'hint', text: list.length + (list.length === 1 ? ' photo' : ' photos') })
+      ]),
+      list.length ? grid : h('p', { class: 'hint', text: 'No photos yet. Same angles each time — front, back, and the detail you are working on.' }),
+      h('div', { class: 'field-grid no-print' }, [
+        field('Add a photo', picker),
+        field('Caption', note, 'optional')
+      ]),
+      status,
+      h('p', { class: 'hint', text: meter })
     ]);
   }
 

@@ -347,6 +347,57 @@ would end the "free, no accounts" property this whole thing is built on.
 
 ---
 
+## Audit against a professional metric-tracking checklist
+
+The tracker was audited against an eight-part professional nursery checklist.
+Status of every item, including what was deliberately not built and why:
+
+| Area | Item | Status |
+|---|---|---|
+| **1 · Identity & logistics** | QR tags | ✅ from day one |
+| | RFID / NFC tags | ➖ nothing to build — write the plant's URL to any NFC tag with a free writer app and it behaves exactly like the QR label |
+| | 1D barcode stakes | ✖ deliberately not — a barcode holds a number, needs a scanner app and a lookup layer; QR opens the page in the stock camera |
+| | Location + movement history | ✅ location on the specimen record; "Moved to" on any check updates it and becomes the history |
+| | Specimen metadata | ✅ species/cultivar, stage, source, estimated age, propagation method, acquisition date |
+| | Valuation | ✅ cost, estimated value, grade/tier, plus logged work time totalled per tree |
+| **2 · Growth & styling** | Height, caliper, canopy | ✅ three series with charts; caliper was already the growth metric |
+| | Developmental stage | ✅ stage list runs through mature specimen and exhibition-ready |
+| | Photo timeline | ✅ per-plant, downscaled and EXIF-stripped, **local-only** (see note below) |
+| | 3D models | ✖ far beyond a static page's budget; the photo timeline is the record |
+| | Wiring log + removal watch | ✅ wired/gauge/removed on any check; a "wire on N d — inspect" chip appears after 14 days |
+| | Repot detail + cycle | ✅ mix, pot, root-prune % logged; last-repot date shown; the repot windows and cycles were already in the calendar |
+| **3 · Irrigation & hydration** | Sensor integration | ✖ honest limit — a static page cannot poll a soil sensor; moisture is manual + the drip log is derived |
+| | Substrate properties | ✅ percolation test (the book's 5 s pass / 15 s fail) joins pH and EC |
+| | Water quality | ✅ thresholds live in the bergamot watch list (alkalinity < 100 ppm etc.); readings go in pH/EC/notes |
+| | Schedule triggers | ✅ the seasonal drip programme already drives the derived log |
+| **4 · Feeding & nutrients** | N-P-K + method | ✅ N-P-K field and method (drench / foliar / slow-release / tea) on every feed |
+| | Micronutrients & amendments | ✅ agent field + notes; kelp and iron rules were already in the profiles |
+| | Runoff monitoring | ✅ was already the core pH/EC discipline |
+| **5 · Propagation** | Parent / mother stock | ✅ lineage links both ways: child names its parent, parent lists propagations |
+| | Method & dates | ✅ propagation method + start date |
+| | Success rates | ✅ "mark as lost" keeps the record, so the parent shows n propagations · n alive |
+| | Hormones & environment | ➖ notes field; the dome protocol itself is in the bench packet |
+| **6 · Health, IPM & quarantine** | Diagnostics | ✅ pest, severity, photos |
+| | Treatments + REI | ✅ agent, dose in notes, REI hours — with a live "REI until…" chip while re-entry is barred |
+| | Quarantine | ✅ new-stock checkbox sets 4 weeks; chip on the plant and the nursery list until it clears |
+| | Seasonal protection | ✅ was already the weather watch + winter floor + move logs |
+| **7 · Environment** | Sensor logs | ✖ same honest limit as irrigation sensors |
+| | VPD | ✖ needs continuously paired temp+RH; deriving it from one daily reading would mislead |
+| | PAR / DLI | ✅ derived on the light tile: PPFD via the book's ÷70 LED rule, DLI from the bench photoperiod (outdoors, instantaneous PPFD only — one midday reading is not a daily integral) |
+| | Push alerts | ✅ within the no-server limit already documented: weather alerts while open, `.ics` for background reminders |
+| **8 · Commercial** | Labor per worker, stock status, client history | ✖ excluded at the owner's request |
+| | Compliance reports | ✅ the CSV now carries agent, target, severity and REI per application — that is the chemical application report |
+
+### The photo caveat, stated plainly
+
+Sync ships the whole nursery as **one Firestore document with a 1 MiB ceiling**,
+and a single raw phone photo is 3–5 MiB. So photos stay on the device that took
+them: downscaled to 640 px JPEG, EXIF stripped (no GPS smuggled into exports),
+capped near 4.5 MB total before localStorage's own cliff. The readings, logs and
+completions sync; the pixels do not. Both the Sync and Backup pages say so.
+
+---
+
 ## Sync, or the lack of it
 
 By default **readings are stored in this browser on this device** and are not
@@ -408,6 +459,7 @@ css/styles.css      theme tokens, light and dark
 js/qrcode.js        self-contained QR encoder (no CDN)
 js/profiles.js      care profiles: tracked factors, target bands, watch lists
 js/store.js         plants, readings, merge and tombstones — the only storage code
+js/photos.js        local-only photo timeline (downscaled, EXIF-stripped)
 js/sync.js          optional Firestore sync over REST (no SDK, no CDN)
 js/charts.js        SVG charts, hover and keyboard readout, table views
 js/calendar.js      dated task windows, the derived drip log, .ics export
@@ -440,6 +492,7 @@ python3 test/smoke_app.py     # the app, in a real browser
 python3 test/sync_test.py     # two devices converging through sync
 python3 test/calendar_test.py # the calendar and the derived drip log
 python3 test/weather_test.py  # move alerts and the calendar export
+python3 test/pro_test.py      # specimen record, lineage, IPM, photos, derived chips
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
