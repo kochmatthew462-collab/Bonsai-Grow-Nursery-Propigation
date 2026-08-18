@@ -38,7 +38,14 @@ import os
 import ipaddress
 from urllib.parse import urlparse
 
-from fastapi import HTTPException, Request
+# FastAPI is imported inside `guard()`, not here.
+#
+# Everything else in this module is plain standard library, and `app/doctor.py`
+# needs it to answer "is this thing running and can anything reach it" — which
+# is a question you ask precisely when the environment is broken. Importing
+# fastapi at module scope meant the self check died with ModuleNotFoundError
+# when run outside the virtual environment, which is the most likely way anyone
+# will run it.
 
 # Host header values a browser will legitimately send for a local service.
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1", "0.0.0.0"}
@@ -164,8 +171,10 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-async def guard(request: Request, config: SecurityConfig) -> None:
+async def guard(request: "Request", config: SecurityConfig) -> None:
     """Reject anything that fails the host or token check."""
+    from fastapi import HTTPException
+
     path = request.url.path
     if not config.host_allowed(request.headers.get("host", "")):
         raise HTTPException(

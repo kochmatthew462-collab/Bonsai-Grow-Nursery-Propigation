@@ -260,6 +260,32 @@ def test_binding_wide_does_not_widen_who_is_admitted() -> None:
               config.token_valid("nope"), False)
 
 
+def test_security_imports_without_fastapi() -> None:
+    """The self check must run outside the virtual environment.
+
+    `python3 -m app.doctor` died with ModuleNotFoundError: No module named
+    'fastapi', because this module imported it at top level. That is the most
+    likely way anyone runs the self check — reaching for it precisely when the
+    environment is in doubt — and a diagnostic that needs a working environment
+    to tell you the environment is broken is no diagnostic at all.
+
+    Everything here except `guard()` is plain standard library, so fastapi is
+    imported inside `guard()` now. This asserts the import stays there.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app" / "security.py").read_text("utf-8")
+    body = source[:source.index("async def guard(")]
+    check("no top-level fastapi import", "from fastapi import" in body, False)
+    check("no top-level fastapi import", "import fastapi" in body, False)
+
+    guard_body = source[source.index("async def guard("):]
+    check("guard imports it itself", "from fastapi import" in guard_body, True)
+
+    doctor = (Path(__file__).resolve().parents[1] / "app" / "doctor.py").read_text("utf-8")
+    for heavy in ("fastapi", "uvicorn", "matplotlib", "docx", "pptx", "httpx"):
+        check(f"doctor does not import {heavy}",
+              f"import {heavy}" in doctor, False)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):
