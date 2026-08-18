@@ -238,6 +238,10 @@ def startup_banner(config: SecurityConfig, warnings: list[str]) -> str:
             "",
             "  Your API keys and project data live in the codespace, which is",
             "  deleted when the codespace is. Export anything you want to keep.",
+            "",
+            "  If that URL 404s, the port is not forwarded and the request never",
+            "  reaches this app. In another terminal, run:",
+            "      python3 -m app.doctor",
         ]
     elif config.local_only:
         lines += [

@@ -204,6 +204,7 @@ def test_the_banner_states_the_codespaces_boundary() -> None:
         contains("warns about Public", banner, "anyone with the URL")
         contains("warns tokens leak in URLs", banner, "leaks into history")
         contains("warns the data is ephemeral", banner, "deleted when the")
+        contains("points at the self check for a 404", banner, "app.doctor")
         for phrase in ("not reachable from your network", "Localhost only"):
             check(f"does not claim {phrase!r}", phrase in banner, False)
 
