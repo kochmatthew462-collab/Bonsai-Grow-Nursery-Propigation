@@ -820,6 +820,36 @@ without its attribution line is a figure that must not be published.
 
 ---
 
+## Running it in a GitHub Codespace
+
+It works there, and the security model is different enough to state rather than
+imply.
+
+The app still binds to `127.0.0.1` inside the container. GitHub forwards the
+port over HTTPS, so the browser arrives with
+`Host: <codespace>-8765.app.github.dev` — which the loopback-only allowlist used
+to reject with a 421 that blamed your URL. That forwarded name is now
+recognised, taken **from the environment and never from the request**, because a
+Host header is attacker-controlled and the whole point of the allowlist is that
+it is not. Only your codespace and only the port actually being served are
+accepted; a different port, another codespace, or a suffix like
+`…app.github.dev.evil.test` is still refused.
+
+The startup banner prints the forwarded HTTPS URL rather than a localhost one
+that would go nowhere, and says what governs access:
+
+- **Port visibility is the boundary.** Private — the default — means your GitHub
+  account only, which is the setting you want. Set it to Public and anyone with
+  the URL can reach it, leaving the session token as the only protection; and a
+  token in a URL leaks into history and logs.
+- **The data is as durable as the codespace.** Your API keys and projects live
+  in it and go when it does. Export anything you want to keep.
+
+If the forwarded URL 404s, that is GitHub's proxy, not this app: nothing is
+listening on that port yet. Start it, then open the port in the Ports panel.
+
+---
+
 ## Security, honestly
 
 The app binds to `127.0.0.1` and requires a session token generated fresh each
@@ -939,8 +969,9 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
+| `test_security.py` | 51 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
 | `test_research_tools.py` | 273 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say — and that it *does* read a structured abstract stated as a sentence, which is the commonest way a journal writes it and which the parser used to miss entirely |
-| `test_frontend.py` | 63 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them |
+| `test_frontend.py` | 130 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_fulltext.py` | 227 | Headings matched against the **whole line**, so "Abstract reasoning was assessed" does not re-section the paper; a section carrying across a page break, including a page that *ends* on a heading; a paraphrase located as well as a verbatim run, because a locator that only finds plagiarism is not a locator; an unrelated sentence finding nothing, which is the answer this exists to give; intervals not truncated and brackets balanced; the same number written two ways counted once; and a source that states nothing producing an empty matrix and a `missing` list rather than a filled one |
 | `test_deck.py` | 45 | The class of defect where a feature exists, works, and is reachable from nothing: figures actually packaged into the .pptx, the evidence-level chart recorded on the project rather than only drawn, speaker notes as complete sentences carrying APA in-text citations (including a group-author abbreviation and a quotation locator), no citation invented for an uncited claim, and a deleted image not taking the whole deck with it |

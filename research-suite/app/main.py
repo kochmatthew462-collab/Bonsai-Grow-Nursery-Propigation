@@ -118,6 +118,15 @@ async def get_config() -> dict[str, Any]:
     client = fetcher()
     return {
         "settings": SETTINGS.redacted(),
+        # Where this is actually reachable, which is not always localhost. The
+        # Settings page used to state "Localhost only — not reachable from your
+        # network" unconditionally, which is false in a Codespace and false in
+        # the reassuring direction.
+        "access": {
+            "url": SECURITY.public_url(),
+            "codespace": SECURITY.codespace,
+            "local_only": SECURITY.local_only and not SECURITY.codespace,
+        },
         "fonts": sorted(APPROVED_FONTS),
         "sources": [
             {
@@ -1455,7 +1464,7 @@ def run() -> None:
     preferred = SETTINGS.port
     sock, port, moved = _claim_port(SETTINGS.host, preferred)
     SETTINGS.port = port
-    SECURITY.port = port
+    SECURITY.rebind(port)
 
     warnings = [w for w in [settings_module.contact_email_warning(SETTINGS)] if w]
     if moved is not None:

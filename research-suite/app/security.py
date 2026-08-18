@@ -34,6 +34,7 @@ authenticating proxy in front of it, or leave it on localhost.
 from __future__ import annotations
 
 import hmac
+import os
 import ipaddress
 from urllib.parse import urlparse
 
@@ -41,6 +42,28 @@ from fastapi import HTTPException, Request
 
 # Host header values a browser will legitimately send for a local service.
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1", "0.0.0.0"}
+
+
+def codespace_host() -> str:
+    """The forwarded hostname when running inside a GitHub Codespace, else "".
+
+    A Codespace does not reach this app on localhost. GitHub forwards the port
+    and the browser arrives with `Host: <name>-<port>.app.github.dev`, which the
+    loopback allowlist rejects with a 421 — so the app is unusable there unless
+    that host is recognised. Detected from the environment rather than accepted
+    from the request, because a Host header is attacker-controlled and the whole
+    point of the allowlist is that it is not.
+    """
+    name = os.environ.get("CODESPACE_NAME", "").strip()
+    domain = os.environ.get(
+        "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev").strip()
+    if not name or not domain:
+        return ""
+    return f"{name}-{{port}}.{domain}"
+
+
+def in_codespace() -> bool:
+    return bool(os.environ.get("CODESPACES", "").strip()) and bool(codespace_host())
 
 # Paths reachable without a token: the shell page (which then supplies the token
 # from its URL fragment) and the health probe.
@@ -59,6 +82,37 @@ class SecurityConfig:
         self.port = port
         self.allowed_hosts = set(LOCAL_HOSTS) | set(extra_hosts or set())
         self.local_only = _is_loopback(host)
+        # A Codespace forwards the port over HTTPS under a hostname derived from
+        # the codespace name. Allowed only when the environment says we are in
+        # one, and only for the port actually served.
+        self.codespace = (codespace_host().format(port=port)
+                          if in_codespace() else "")
+        if self.codespace:
+            self.allowed_hosts.add(self.codespace)
+
+    def rebind(self, port: int) -> None:
+        """Move to a different port after startup claimed one.
+
+        `run()` may land on 8766 when 8765 is busy, and the forwarded Codespaces
+        hostname embeds the port. Without recomputing it here the allowlist
+        would name a host the browser never sends, and every request would be
+        rejected with a 421 that blamed the user's URL.
+        """
+        if port == self.port:
+            return
+        if self.codespace:
+            self.allowed_hosts.discard(self.codespace)
+        self.port = port
+        self.codespace = (codespace_host().format(port=port)
+                          if in_codespace() else "")
+        if self.codespace:
+            self.allowed_hosts.add(self.codespace)
+
+    def public_url(self) -> str:
+        """Where to actually open this, which is not always localhost."""
+        if self.codespace:
+            return f"https://{self.codespace}/"
+        return f"http://{'localhost' if self.local_only else self.host}:{self.port}/"
 
     def host_allowed(self, header: str) -> bool:
         """Check the Host header, which is the DNS-rebinding defence.
@@ -71,9 +125,22 @@ class SecurityConfig:
         if not header:
             return False
         name = header.split(",")[0].strip()
-        if ":" in name and not name.startswith("["):
+        # An IPv6 literal arrives bracketed, and with a port it is
+        # "[::1]:8765". Stripping brackets *before* the port left "::1]:8765",
+        # which matched nothing — so a browser that resolved localhost to ::1
+        # was locked out with a 421 blaming its own URL. Take the bracketed
+        # part first, then the port, then compare.
+        if name.startswith("["):
+            end = name.find("]")
+            name = name[1:end] if end != -1 else name.lstrip("[")
+        elif name.count(":") > 1:
+            # More than one colon and no brackets: a bare IPv6 literal, which
+            # has no port to strip. Splitting on the last colon would turn
+            # "::1" into ":".
+            pass
+        elif ":" in name:
             name = name.rsplit(":", 1)[0]
-        name = name.strip("[]").lower()
+        name = name.lower()
         if name in {h.strip("[]").lower() for h in self.allowed_hosts}:
             return True
         if not self.local_only:
@@ -146,7 +213,7 @@ async def guard(request: Request, config: SecurityConfig) -> None:
 def startup_banner(config: SecurityConfig, warnings: list[str]) -> str:
     """What the user sees in the terminal. The URL includes the token so
     clicking it is all that is needed."""
-    url = f"http://{'localhost' if config.local_only else config.host}:{config.port}/"
+    url = config.public_url()
     lines = [
         "",
         "  Koch Research Suite",
@@ -154,7 +221,25 @@ def startup_banner(config: SecurityConfig, warnings: list[str]) -> str:
         f"  Open:  {url}#token={config.token}",
         "",
     ]
-    if config.local_only:
+    if config.codespace:
+        # Different boundary, and worth stating rather than implying. A
+        # forwarded port is private to the codespace owner by default — GitHub
+        # authenticates it — but "Public" visibility is one menu click away, and
+        # at that point the session token is the only thing left.
+        lines += [
+            "  Running in a GitHub Codespace, so this is reached over HTTPS at",
+            "  the forwarded address above, not at localhost.",
+            "",
+            "  Port visibility governs who can reach it. The default is Private:",
+            "  only your GitHub account, which is the setting you want. If you",
+            "  set the port to Public, anyone with the URL can reach this and the",
+            "  session token becomes the only protection — and a token in a URL",
+            "  leaks into history and logs. Check the Ports panel.",
+            "",
+            "  Your API keys and project data live in the codespace, which is",
+            "  deleted when the codespace is. Export anything you want to keep.",
+        ]
+    elif config.local_only:
         lines += [
             "  Bound to localhost only — not reachable from your network.",
             "  Security boundary: your operating system user account. Anything",

@@ -1556,14 +1556,7 @@ function viewSettings() {
 
   return el('section', { class: 'stack' },
     el('h1', {}, 'Settings'),
-    notice(`Bound to ${config.host}:${config.port}. `
-      + (config.host === '127.0.0.1'
-        ? 'Localhost only — not reachable from your network. The security '
-          + 'boundary is your operating system account: anything running as you '
-          + 'can read the project data and the API keys.'
-        : '⚠ Not localhost. This is reachable from your network — put an '
-          + 'authenticating proxy in front of it.'),
-    config.host === '127.0.0.1' ? '' : 'bad'),
+    accessNotice(),
 
     card('Contact email',
       el('p', { class: 'hint' }, 'NCBI’s usage policy asks every client to '
@@ -1645,6 +1638,41 @@ function viewSettings() {
 /* You asked for the grammar checking to be "maybe linked to my Grammarly". It
    cannot be, and the honest answer with the working alternative belongs where
    you would go looking for it rather than buried in a README. */
+
+/* Where this is actually reachable. The old text said "Localhost only — not
+   reachable from your network" whenever the bind address was 127.0.0.1, which
+   is exactly what it is inside a GitHub Codespace while the app is in fact
+   served over HTTPS on a forwarded public hostname. A reassurance that is false
+   is worse than none. */
+
+function accessNotice() {
+  const access = (state.config && state.config.access) || {};
+  const settings = state.config.settings;
+
+  if (access.codespace) {
+    return el('div', { class: 'stack' },
+      notice(`Served in a GitHub Codespace at ${access.url} — not on localhost, `
+        + 'even though it binds to 127.0.0.1 inside the container.', 'warn'),
+      notice('Who can reach it is set by the port’s visibility in the Ports '
+        + 'panel. Private, the default, means your GitHub account only — that '
+        + 'is the setting you want. Public means anyone with the URL, leaving '
+        + 'the session token as the only protection, and a token in a URL leaks '
+        + 'into history and logs.', 'warn'),
+      notice('Your API keys and projects live in the codespace and go when it '
+        + 'does. Export anything you want to keep.'));
+  }
+
+  if (access.local_only !== false) {
+    return notice(`Bound to ${settings.host}:${settings.port}. Localhost only — `
+      + 'not reachable from your network. The security boundary is your '
+      + 'operating system account: anything running as you can read the project '
+      + 'data and the API keys.');
+  }
+
+  return notice(`Bound to ${settings.host}:${settings.port}. ⚠ Not localhost. `
+    + 'This is reachable from your network — put an authenticating proxy in '
+    + 'front of it.', 'bad');
+}
 
 function grammarlyCard() {
   const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
