@@ -223,7 +223,19 @@ def load(root: Path | None = None) -> Settings:
         os.environ.get("RESEARCH_SUITE_EMAIL", "").strip()
         or env_values.get("RESEARCH_SUITE_EMAIL", "")
     )
-    settings.host = os.environ.get("RESEARCH_SUITE_HOST", "127.0.0.1").strip()
+    # 127.0.0.1 everywhere except a GitHub Codespace, where it has to be
+    # 0.0.0.0. The forwarder runs outside the container's loopback interface, so
+    # a service bound only to 127.0.0.1 is not detected and not reachable — the
+    # forwarded URL returns 404 while the app sits there serving happily. An
+    # explicit RESEARCH_SUITE_HOST always wins.
+    #
+    # This is not the loosening it looks like. A codespace container is not
+    # addressable from the internet; the only route in is GitHub's authenticated
+    # proxy, and which people that proxy admits is set by the port's visibility.
+    # Binding wider inside the container changes nothing about who can reach it.
+    default_host = "0.0.0.0" if os.environ.get("CODESPACES", "").strip() \
+        else "127.0.0.1"
+    settings.host = os.environ.get("RESEARCH_SUITE_HOST", default_host).strip()
     settings.port = int(os.environ.get("RESEARCH_SUITE_PORT", "8765"))
     settings.default_font = (
         os.environ.get("RESEARCH_SUITE_FONT", "").strip()

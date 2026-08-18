@@ -216,6 +216,49 @@ def test_the_local_banner_still_says_localhost() -> None:
         check("no codespaces text", "Codespace" in banner, False)
 
 
+def test_a_codespace_binds_wide_enough_to_be_forwarded() -> None:
+    """GitHub's own guidance is that a forwarded app listens on 0.0.0.0.
+
+    A service bound only to loopback is unreliably detected by the port
+    forwarder, and the symptom is a 404 on the *.app.github.dev URL while the
+    application sits there serving happily — nothing in either place points at
+    the other.
+
+    Outside a codespace the bind must stay on loopback, and an explicit
+    RESEARCH_SUITE_HOST must win in both cases.
+    """
+    from app import settings as settings_module
+
+    with not_a_codespace():
+        os.environ.pop("RESEARCH_SUITE_HOST", None)
+        check("loopback by default", settings_module.load().host, "127.0.0.1")
+
+    with codespace():
+        os.environ.pop("RESEARCH_SUITE_HOST", None)
+        check("wide inside a codespace", settings_module.load().host, "0.0.0.0")
+
+    with codespace():
+        os.environ["RESEARCH_SUITE_HOST"] = "127.0.0.1"
+        try:
+            check("an explicit host still wins",
+                  settings_module.load().host, "127.0.0.1")
+        finally:
+            os.environ.pop("RESEARCH_SUITE_HOST", None)
+
+
+def test_binding_wide_does_not_widen_who_is_admitted() -> None:
+    """0.0.0.0 changes which interface accepts a connection, not the allowlist."""
+    with codespace():
+        config = security.SecurityConfig("tok", "0.0.0.0", 8765)
+        check("forwarded host allowed", config.host_allowed(FORWARDED), True)
+        check("localhost allowed", config.host_allowed("localhost"), True)
+        for header in ("evil.test", "someone-else-8765.app.github.dev",
+                       f"{CODESPACE}-9999.app.github.dev"):
+            check(f"{header} still refused", config.host_allowed(header), False)
+        check("a wrong token is still a wrong token",
+              config.token_valid("nope"), False)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

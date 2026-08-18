@@ -1,0 +1,28 @@
+{
+  "name": "Koch Clinical Suite",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
+  // Without this the port is never forwarded and the *.app.github.dev URL
+  // returns 404 while the application is running perfectly well inside the
+  // container. Declaring it here means the port exists from the moment the
+  // codespace starts, rather than only once something binds to it.
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": {
+      "label": "Koch Clinical Suite",
+      // Private: reachable by the codespace owner's GitHub account and nobody
+      // else. Do not change this to "public" — the session token would become
+      // the only protection, and it travels in the URL.
+      "visibility": "private",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "postCreateCommand": "cd research-suite && python -m pip install --quiet -r requirements.txt",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}
