@@ -133,12 +133,24 @@ function statBlock(pairs) {
 
 function render() {
   const nav = document.getElementById('nav');
-  nav.hidden = !state.project;
+
+  // The nav itself always shows on this tab. Hiding the whole bar until a
+  // project existed also hid Settings — and Settings is where you put the
+  // contact email that every search wants, so it is the one screen you need
+  // *before* starting a paper. Only the steps that operate on an open project
+  // come and go.
+  // Tied to whether this half's view is showing, rather than to `shell.tab`:
+  // `shell` is declared in shell.js, which loads *after* this file, so reading
+  // it here would be a load-order inversion waiting to throw. The DOM already
+  // knows which half is active.
+  nav.hidden = document.getElementById('view').hidden;
   document.getElementById('switch-project').hidden = !state.project;
   document.getElementById('project-label').textContent =
     state.project ? state.project.topic : '';
   for (const button of nav.querySelectorAll('button')) {
-    button.classList.toggle('is-active', button.dataset.view === state.view);
+    const view = button.dataset.view;
+    button.classList.toggle('is-active', view === state.view);
+    button.hidden = VIEWS_NEEDING_A_PROJECT.has(view) && !state.project;
   }
 
   const host = document.getElementById('view');

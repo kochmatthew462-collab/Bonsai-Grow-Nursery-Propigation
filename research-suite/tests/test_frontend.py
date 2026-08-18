@@ -493,6 +493,63 @@ def test_project_dependent_views_are_declared() -> None:
         check(f"{view!r} is a real view", view in mapped, True)
 
 
+def test_the_nav_bars_are_never_hidden_wholesale() -> None:
+    """Hiding the whole bar takes the always-available screens with it.
+
+    Making `hidden` actually work (see the [hidden] test above) exposed a second
+    defect underneath it: `nav.hidden = !state.project` meant that with no
+    project open there was no Settings button at all — and Settings is where the
+    contact email goes, which every search wants, so it is the one screen you
+    need *before* starting a paper. The charting half had the same shape, and
+    hiding that bar removed Reference: the licensing register and the plain
+    statement of what the tool is not.
+
+    So neither bar may be hidden on its own tab. Visibility is per button.
+    """
+    app = _source("app.js")
+    chart = _source("chart.js")
+
+    check("app.js does not hide the research nav on the project",
+          "nav.hidden = !state.project" not in app, True)
+    check("chart.js does not hide the charting nav on the encounter",
+          "nav.hidden = !chartState.encounter" not in chart, True)
+
+    # Each render toggles `hidden` per button instead.
+    check("app.js hides individual research buttons",
+          "button.hidden = VIEWS_NEEDING_A_PROJECT" in app, True)
+    check("chart.js hides individual charting buttons",
+          "button.hidden = CVIEWS_NEEDING_AN_ENCOUNTER" in chart, True)
+
+
+def test_the_always_available_screens_stay_reachable() -> None:
+    """Settings and Reference must never be gated behind creating something."""
+    app = _source("app.js")
+    chart = _source("chart.js")
+
+    research = re.search(r"const VIEWS_NEEDING_A_PROJECT\s*=\s*new Set\(\[(.*?)\]\)",
+                         app, re.DOTALL)
+    charting = re.search(r"const CVIEWS_NEEDING_AN_ENCOUNTER\s*=\s*new Set\(\[(.*?)\]\)",
+                         chart, re.DOTALL)
+    check("app.js declares the gated research views", bool(research), True)
+    check("chart.js declares the gated charting views", bool(charting), True)
+    if not research or not charting:
+        return
+
+    gated_research = set(re.findall(r"'([^']+)'", research.group(1)))
+    gated_charting = set(re.findall(r"'([^']+)'", charting.group(1)))
+
+    for view in ("settings", "compliance", "question"):
+        check(f"research {view!r} is reachable without a project",
+              view not in gated_research, True)
+    check("charting 'reference' is reachable without an encounter",
+          "reference" not in gated_charting, True)
+
+    # And the charting router must actually serve Reference in that state,
+    # rather than falling through to the encounter picker.
+    check("renderChart serves Reference with no encounter open",
+          "chartState.view !== 'reference'" in chart, True)
+
+
 def test_research_routes_are_reachable_from_the_ui() -> None:
     """The same check on the research side, where it was not being run.
 

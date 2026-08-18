@@ -1900,6 +1900,14 @@ function viewReference() {
 
 /* ------------------------------------------------------------------ routing */
 
+/* Every charting step except Reference operates on an open encounter.
+   Reference is the licensing register, the rule table, the language sandbox and
+   the disclosure — all of which are worth reading before an encounter exists. */
+const CVIEWS_NEEDING_AN_ENCOUNTER = new Set([
+  'note', 'assess', 'scales', 'macros', 'module', 'loops', 'timeline',
+  'handoff', 'chartexport',
+]);
+
 function renderChart() {
   const nav = document.getElementById('chart-nav');
   const host = document.getElementById('chart-view');
@@ -1907,17 +1915,27 @@ function renderChart() {
     host.replaceChildren(el('p', { class: 'hint' }, 'Loading…'));
     return;
   }
-  nav.hidden = !chartState.encounter;
+  // The nav stays; only the steps that need an open encounter come and go.
+  // Hiding the whole bar took Reference with it — and Reference carries the
+  // licensing register and the plain statement of what this tool is not, which
+  // is the screen to read *before* charting anything, not after.
+  nav.hidden = host.hidden;
   document.getElementById('encounter-label').hidden = !chartState.encounter;
   document.getElementById('switch-encounter').hidden = !chartState.encounter;
   document.getElementById('encounter-label').textContent = chartState.encounter
     ? (chartState.encounter.local_label || chartState.encounter.encounter_id) : '';
   for (const button of nav.querySelectorAll('button')) {
-    button.classList.toggle('is-active', button.dataset.cview === chartState.view);
+    const view = button.dataset.cview;
+    button.classList.toggle('is-active', view === chartState.view);
+    button.hidden = CVIEWS_NEEDING_AN_ENCOUNTER.has(view) && !chartState.encounter;
   }
 
-  if (!chartState.encounter) {
+  if (!chartState.encounter && chartState.view !== 'reference') {
     host.replaceChildren(viewEncounters());
+    return;
+  }
+  if (!chartState.encounter) {
+    host.replaceChildren(viewReference());
     return;
   }
   if (!chartState.draft) chartState.draft = blankDraft();
