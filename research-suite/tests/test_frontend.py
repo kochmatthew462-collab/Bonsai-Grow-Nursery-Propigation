@@ -550,6 +550,30 @@ def test_the_always_available_screens_stay_reachable() -> None:
           "chartState.view !== 'reference'" in chart, True)
 
 
+def test_the_shell_and_scripts_are_never_cached() -> None:
+    """A cached app.js makes a fixed bug keep reproducing.
+
+    The user hit the same "Cannot read properties of null" twice — once for
+    real, and once because the browser was still running the previous
+    /static/app.js after the fix had been pushed, pulled and restarted. The
+    only cure was a hard refresh nobody thinks to do, and from the outside it
+    looks like the fix did not work.
+
+    This is a localhost single-user app: no CDN, no bandwidth budget, files
+    measured in tens of kilobytes. Correctness beats a cache hit.
+    """
+    source = (ROOT / "app" / "main.py").read_text("utf-8")
+    middleware = source[source.index("async def enforce_security"):
+                        source.index("# ------")]
+    check("no-store is set", "no-store" in middleware, True)
+    check("on the shell", '"/"' in middleware, True)
+    check("and on the scripts", '"/static/"' in middleware, True)
+    # The API must not be blanket no-store'd by accident: these headers belong
+    # to the two things a browser caches aggressively, not to every response.
+    check("scoped by path rather than applied to everything",
+          "request.url.path" in middleware, True)
+
+
 def test_render_survives_a_missing_config() -> None:
     """Nothing can be drawn before /api/config answers.
 

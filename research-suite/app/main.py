@@ -80,6 +80,19 @@ async def enforce_security(request: Request, call_next):
     except HTTPException as error:
         return JSONResponse({"detail": error.detail}, status_code=error.status_code)
     response = await call_next(request)
+
+    # Never cache the shell or its scripts.
+    #
+    # A browser holds on to /static/app.js across a server restart, so a fixed
+    # bug keeps reproducing on the user's screen and the only cure is a hard
+    # refresh they have to be told about — which happened here, repeatedly.
+    # This is a localhost single-user app: no CDN, no bandwidth budget, and the
+    # files are tens of kilobytes. Correctness beats a cache hit every time.
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
     # No embedding, no referrer leakage, no MIME sniffing. The CSP is strict
     # because the UI ships no third-party code at all.
     response.headers["X-Frame-Options"] = "DENY"
