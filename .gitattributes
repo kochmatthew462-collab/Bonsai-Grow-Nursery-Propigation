@@ -1,0 +1,33 @@
+# Line endings.
+#
+# Shell scripts must be checked out with LF on every platform. Git for Windows
+# defaults to core.autocrlf=true, which rewrites them to CRLF on checkout — and
+# a CRLF shebang fails as:
+#
+#     bash: ./run.sh: /usr/bin/env bash^M: bad interpreter
+#
+# which reads as "the script is missing or broken" while the file looks
+# perfect in an editor. Anyone on WSL or Git Bash hits it, and nothing on
+# screen points at the cause.
+*.sh            text eol=lf
+*.bash          text eol=lf
+
+# PowerShell is fine either way, but pinning it keeps diffs clean.
+*.ps1           text eol=crlf
+
+# Everything else: normalise in the repository, native on checkout.
+*.py            text
+*.js            text
+*.css           text
+*.html          text
+*.md            text
+*.json          text
+*.txt           text
+
+# Binary — never touch these.
+*.png           binary
+*.jpg           binary
+*.pdf           binary
+*.docx          binary
+*.xlsx          binary
+*.pptx          binary

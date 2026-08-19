@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koch Clinical Suite</title>
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'&gt;&lt;text y='13' font-size='13'&gt;📑&lt;/text&gt;&lt;/svg&gt;">
+</head>
+<body>
+
+<div class="tabbar" role="tablist" aria-label="Application">
+  <button type="button" role="tab" data-tab="research" class="is-active">
+    <span aria-hidden="true">📑</span> Research &amp; writing
+  </button>
+  <button type="button" role="tab" data-tab="charting">
+    <span aria-hidden="true">🩺</span> Clinical charting
+  </button>
+</div>
+
+<header class="app-header">
+  <div class="brand"><span aria-hidden="true">📑</span> <span id="brand-text">Koch Research Suite</span></div>
+  <nav class="app-nav" id="nav" hidden>
+    <!-- APA 7 leads the nav because it is the standard the whole application
+         exists to meet, not a step in the workflow. It is readable before a
+         project exists; the numbered steps are the pipeline. -->
+    <button type="button" data-view="apa" class="nav-standard">APA 7</button>
+    <button type="button" data-view="question" class="is-active">1 · Question</button>
+    <button type="button" data-view="sources">2 · Sources</button>
+    <button type="button" data-view="screen">3 · Screen</button>
+    <button type="button" data-view="fulltext">4 · Full text</button>
+    <button type="button" data-view="appraise">5 · Appraise</button>
+    <button type="button" data-view="write">6 · Write</button>
+    <button type="button" data-view="check">7 · Check</button>
+    <button type="button" data-view="export">8 · Export</button>
+    <button type="button" data-view="compliance">Compliance</button>
+    <button type="button" data-view="settings">Settings</button>
+  </nav>
+  <nav class="app-nav" id="chart-nav" hidden>
+    <button type="button" data-cview="note" class="is-active">Note</button>
+    <button type="button" data-cview="assess">Head to toe</button>
+    <button type="button" data-cview="scales">Scales</button>
+    <button type="button" data-cview="macros">Macros</button>
+    <button type="button" data-cview="module">Module</button>
+    <button type="button" data-cview="loops">Loops</button>
+    <button type="button" data-cview="timeline">Timeline</button>
+    <button type="button" data-cview="handoff">Handoff</button>
+    <button type="button" data-cview="chartexport">Export</button>
+    <button type="button" data-cview="reference">Reference</button>
+  </nav>
+  <div class="header-right">
+    <span id="project-label" class="project-label"></span>
+    <button type="button" id="switch-project" class="button button-quiet" hidden>Switch</button>
+    <span id="encounter-label" class="project-label" hidden></span>
+    <button type="button" id="switch-encounter" class="button button-quiet" hidden>Switch</button>
+  </div>
+</header>
+
+<main id="view" class="app-main"></main>
+<main id="chart-view" class="app-main" hidden></main>
+
+<div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+
+<template id="tpl-projects">
+  <section class="stack">
+    <h1>Projects</h1>
+    <p class="lede">
+      Each project is one paper: its search history, its screened sources, its
+      appraisals, its claim ledger, and both output documents. Everything is
+      stored as a single JSON file you can read, back up or hand to a supervisor.
+    </p>
+
+    <div class="card">
+      <h2>Start a new paper</h2>
+      <label>Topic
+        <input type="text" id="new-topic" placeholder="Nurse staffing ratios and inpatient fall rates">
+      </label>
+      <label>Research question <span class="hint">optional, but it sharpens every later step</span>
+        <input type="text" id="new-question" placeholder="Do higher nurse staffing ratios reduce inpatient falls in adult acute care?">
+      </label>
+      <label>Academic level
+        <select id="new-level">
+          <option value="undergraduate">Undergraduate</option>
+          <option value="graduate" selected>Graduate</option>
+          <option value="doctoral">Doctoral / DNP</option>
+        </select>
+      </label>
+      <button type="button" id="create-project" class="button">Create project</button>
+    </div>
+
+    <div class="card">
+      <h2>Existing projects</h2>
+      <div id="project-list" class="list"></div>
+    </div>
+  </section>
+</template>
+
+<script src="/static/app.js"></script>
+<script src="/static/chart.js"></script>
+<script src="/static/shell.js"></script>
+</body>
+</html>

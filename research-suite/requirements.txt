@@ -1,0 +1,44 @@
+# Koch Research Suite — pinned to major versions, all pure-Python or wheels.
+#
+# Everything here is needed. There is no optional-extras split: a tool that
+# silently loses its Word export because a wheel was missing is worse than one
+# that refuses to start.
+
+# --- web layer (binds to 127.0.0.1 only; see app/security.py) ---
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2.7,<3
+python-multipart>=0.0.9         # form uploads for RIS/BibTeX and writing samples
+httpx>=0.27,<1                  # every outbound call goes through app/sources/base.py
+
+# --- documents ---
+python-docx>=1.1,<2             # the APA 7 paper and the audit document
+python-pptx>=0.6.23,<1          # APA-compliant slides
+lxml>=5.0                       # raw OOXML for page-number fields and running heads
+                                # (python-docx depends on it; pinned here because
+                                #  apa/ooxml.py uses it directly)
+
+# --- full text ---
+pypdf>=4.0,<7                   # reads PDFs into anchored paragraphs
+# Imported lazily behind a guard in app/sources/fulltext.py, and that guard
+# catches more than ImportError on purpose: pypdf pulls in `cryptography` for
+# encrypted files, and a broken build of it aborts in Rust rather than raising.
+# Without pypdf you lose PDF parsing and keep pasted text, which is the right
+# thing to lose — everything downstream works identically either way.
+
+# --- figures and tables ---
+matplotlib>=3.8,<4              # APA figures, rendered headless
+numpy>=1.26,<3
+
+# --- writing analysis ---
+# Deliberately no textstat/nltk/spacy. Readability is a closed formula computed
+# in app/writing/style.py, and textstat fetches an NLTK corpus at import time —
+# which means a style profile that silently reports zero on a machine with no
+# network. A number that is quietly wrong is worse than one computed simply.
+
+# --- drafting ---
+anthropic>=0.40                 # the drafting model; see app/writing/draft.py
+
+# --- secrets ---
+keyring>=25.0                   # OS keychain when available, .env when not
+python-dotenv>=1.0,<2
