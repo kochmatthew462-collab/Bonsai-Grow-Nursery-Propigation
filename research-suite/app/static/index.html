@@ -22,6 +22,10 @@
 <header class="app-header">
   <div class="brand"><span aria-hidden="true">📑</span> <span id="brand-text">Koch Research Suite</span></div>
   <nav class="app-nav" id="nav" hidden>
+    <!-- APA 7 leads the nav because it is the standard the whole application
+         exists to meet, not a step in the workflow. It is readable before a
+         project exists; the numbered steps are the pipeline. -->
+    <button type="button" data-view="apa" class="nav-standard">APA 7</button>
     <button type="button" data-view="question" class="is-active">1 · Question</button>
     <button type="button" data-view="sources">2 · Sources</button>
     <button type="button" data-view="screen">3 · Screen</button>
@@ -30,7 +34,6 @@
     <button type="button" data-view="write">6 · Write</button>
     <button type="button" data-view="check">7 · Check</button>
     <button type="button" data-view="export">8 · Export</button>
-    <button type="button" data-view="apa">APA 7</button>
     <button type="button" data-view="compliance">Compliance</button>
     <button type="button" data-view="settings">Settings</button>
   </nav>

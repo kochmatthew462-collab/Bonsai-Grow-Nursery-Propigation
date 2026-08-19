@@ -1113,6 +1113,25 @@ async def journal_check(project_id: str,
 # --------------------------------------------------------------------- APA 7
 
 
+# Agency authors APA expects to be shortened after their first appearance
+# (§8.21). Only well-known agencies are listed: inventing an acronym for an
+# unfamiliar organisation produces a citation a reader cannot resolve.
+KNOWN_GROUP_ABBREVIATIONS = {
+    "Centers for Disease Control and Prevention": "CDC",
+    "World Health Organization": "WHO",
+    "National Institutes of Health": "NIH",
+    "Agency for Healthcare Research and Quality": "AHRQ",
+    "U.S. Preventive Services Task Force": "USPSTF",
+    "American Nurses Association": "ANA",
+    "Institute of Medicine": "IOM",
+    "National Academies of Sciences, Engineering, and Medicine": "NASEM",
+    "Office of Disease Prevention and Health Promotion": "ODPHP",
+    "Joint Commission": "TJC",
+    "American Association of Critical-Care Nurses": "AACN",
+    "Joanna Briggs Institute": "JBI",
+}
+
+
 # Every rule the document builder actually enforces, each with the section of
 # the Publication Manual it comes from. Kept here rather than in the front end
 # because it is a claim about what the code does, and it should be edited in the
@@ -1167,6 +1186,236 @@ APA_RULES = [
 ]
 
 
+# Twenty-four surnames for the 21-or-more-authors example (§9.8). Ordinary
+# names rather than Author01…Author24, because a reader checking the ellipsis
+# rule should be looking at the ellipsis, not at placeholder text.
+_EXAMPLE_TWENTY_FOUR = [
+    ("Abbott", "R. J."), ("Bianchi", "L."), ("Chowdhury", "N."),
+    ("Delacroix", "P."), ("Eriksen", "M. T."), ("Farrell", "S."),
+    ("Gupta", "A."), ("Haugen", "K."), ("Ibrahim", "Y."),
+    ("Jensen", "E. L."), ("Kowalski", "T."), ("Lindqvist", "B."),
+    ("Moreau", "C."), ("Nowak", "J."), ("O'Sullivan", "F."),
+    ("Petrov", "D."), ("Quintero", "R."), ("Rahman", "S. A."),
+    ("Steiner", "H."), ("Tanaka", "M."), ("Ustinov", "V."),
+    ("Vargas", "I."), ("Weller", "G."), ("Zhang", "Q."),
+]
+
+
+# The reference types students get wrong most often, written out as Work
+# records and rendered by the same citation engine the exporter uses. They are
+# worked examples, not sources: nothing here is retrievable and nothing here
+# enters a project. Their value is that they are *generated* — if the engine
+# regresses, these examples break in the browser before a paper does.
+def _example_works() -> list[Work]:
+    return [
+        Work(
+            key="ex-journal-two",
+            work_type=WorkType.JOURNAL_ARTICLE,
+            authors=[Author(family="Alvarez", given="Marta R."),
+                     Author(family="Okonkwo", given="Daniel")],
+            year="2023",
+            title="Nurse staffing ratios and inpatient fall rates in adult acute care",
+            container="Journal of Advanced Nursing",
+            volume="79", issue="4", pages="1120-1133",
+            doi="10.1111/jan.15487",
+        ),
+        Work(
+            key="ex-journal-three",
+            work_type=WorkType.JOURNAL_ARTICLE,
+            authors=[Author(family="Brennan", given="Katherine L."),
+                     Author(family="Duffy", given="Sean"),
+                     Author(family="Nakamura", given="Hiroshi")],
+            year="2022",
+            title="Early mobility protocols after cardiac surgery: A randomized controlled trial",
+            container="American Journal of Critical Care",
+            volume="31", issue="2", pages="94-104",
+            doi="10.4037/ajcc2022311",
+        ),
+        Work(
+            key="ex-group-report",
+            work_type=WorkType.REPORT,
+            authors=[Author.group("World Health Organization")],
+            year="2021",
+            title="Global patient safety action plan 2021-2030",
+            publisher="World Health Organization",
+            url="https://www.who.int/publications/i/item/9789240032705",
+        ),
+        Work(
+            key="ex-book",
+            work_type=WorkType.BOOK,
+            authors=[Author(family="Polit", given="Denise F."),
+                     Author(family="Beck", given="Cheryl T.")],
+            year="2021",
+            title="Nursing research: Generating and assessing evidence for nursing practice",
+            edition="11", publisher="Wolters Kluwer",
+        ),
+        Work(
+            key="ex-chapter",
+            work_type=WorkType.BOOK_CHAPTER,
+            authors=[Author(family="Ramirez", given="Luis A.")],
+            editors=[Author(family="Hughes", given="Ronda G.")],
+            year="2020",
+            title="Falls and fall prevention among older adults",
+            container="Patient safety and quality: An evidence-based handbook for nurses",
+            pages="211-238",
+            publisher="Agency for Healthcare Research and Quality",
+        ),
+        Work(
+            key="ex-webpage",
+            work_type=WorkType.WEBPAGE,
+            authors=[Author.group("Centers for Disease Control and Prevention")],
+            year="2024",
+            title="Older adult fall prevention: Facts about falls",
+            container="Centers for Disease Control and Prevention",
+            url="https://www.cdc.gov/falls/facts.html",
+        ),
+        Work(
+            key="ex-thesis",
+            work_type=WorkType.THESIS,
+            authors=[Author(family="Whitfield", given="Amara J.")],
+            year="2022",
+            title="Bedside handoff and patient-reported involvement in care",
+            publisher="University of Michigan",
+            url="https://deepblue.lib.umich.edu/handle/2027.42/example",
+        ),
+        Work(
+            key="ex-many-authors",
+            work_type=WorkType.JOURNAL_ARTICLE,
+            authors=[Author(family=surname, given=given) for surname, given in
+                     _EXAMPLE_TWENTY_FOUR],
+            year="2024",
+            title="A twenty-four-author trial, shown for the 21-or-more rule",
+            container="BMJ Open",
+            volume="14", issue="1", pages="e078000",
+            doi="10.1136/bmjopen-2024-078000",
+        ),
+        Work(
+            key="ex-no-date",
+            work_type=WorkType.WEBPAGE,
+            authors=[Author.group("American Nurses Association")],
+            year="",
+            title="Nursing: Scope and standards of practice",
+            container="American Nurses Association",
+            url="https://www.nursingworld.org/practice-policy/scope-of-practice/",
+        ),
+    ]
+
+
+# What each worked example is there to demonstrate. Kept beside the works so a
+# reader can tell why a twenty-four-author paper is in a list of nine.
+_EXAMPLE_POINTS = {
+    "ex-journal-two": "Two authors: an ampersand inside parentheses, "
+                      "“and” in narrative use (§8.17).",
+    "ex-journal-three": "Three or more authors: et al. from the very first "
+                        "citation, not from the second (§8.17).",
+    "ex-group-report": "Group author: spelled out with its abbreviation the "
+                       "first time, abbreviated after (§8.21).",
+    "ex-book": "A whole book: title italic, edition in parentheses, publisher "
+               "with no location (§9.29).",
+    "ex-chapter": "A chapter: editors in initial-then-surname order with "
+                  "“In”, chapter title upright, book title italic "
+                  "(§9.28).",
+    "ex-webpage": "A page on an organisation’s site, with the site named "
+                  "and no retrieval date for stable content (§9.34).",
+    "ex-thesis": "A thesis: type and awarding institution in square brackets "
+                 "(§9.31).",
+    "ex-many-authors": "Twenty-one or more authors: the first nineteen, an "
+                       "ellipsis, then the final author — never et al. in "
+                       "the reference list (§9.8).",
+    "ex-no-date": "No date: n.d. in both the citation and the reference, never "
+                  "a guessed year (§9.17).",
+}
+
+
+def _preview_rows(works: list[Work],
+                  abbreviations: dict[str, str] | None = None,
+                  *, points: bool = False) -> list[dict[str, str]]:
+    """Render each work three ways through the real engine.
+
+    A fresh ``CitationContext`` per row is deliberate: group abbreviations are
+    stateful across a document, and every row here is meant to read as a *first*
+    citation. Sharing one context would show the second WHO example abbreviated
+    with no preceding expansion for the reader to have seen.
+    """
+    shared = CitationContext(works, abbreviations)
+    rows = []
+    for work in works:
+        first = CitationContext(works, abbreviations)
+        row = {
+            "key": work.key,
+            "label": work.short_label(),
+            "parenthetical": citations_module.plain(
+                citations_module.intext([work], first)),
+            "narrative": citations_module.preview_author(work, first,
+                                                         narrative=True),
+            "reference": citations_module.plain(
+                citations_module.reference(work, shared)),
+        }
+        if points:
+            row["point"] = _EXAMPLE_POINTS.get(work.key, "")
+        rows.append(row)
+    return rows
+
+
+def _apa_reference() -> dict[str, Any]:
+    """The parts of the APA answer that do not depend on a project.
+
+    Split out so the formatting rules are reachable before anything exists to
+    format. The manual is the same manual whether or not a paper has been
+    started, and making the user create a project to read it was the same
+    mistake as hiding the formatting behind an export button.
+    """
+    return {
+        "rules": [{"rule": r, "detail": d, "section": s, "group": g}
+                  for r, d, s, g in APA_RULES],
+        "headings": [
+            {"level": 1, "format": "Centred, bold, title case", "section": "§2.27"},
+            {"level": 2, "format": "Flush left, bold, title case", "section": "§2.27"},
+            {"level": 3, "format": "Flush left, bold italic, title case",
+             "section": "§2.27"},
+            {"level": 4, "format": "Indented, bold, title case, ends with a "
+             "period, text runs on", "section": "§2.27"},
+            {"level": 5, "format": "Indented, bold italic, title case, ends "
+             "with a period, text runs on", "section": "§2.27"},
+        ],
+        "fonts": sorted(APPROVED_FONTS),
+        "examples": _preview_rows(_example_works(),
+                                  KNOWN_GROUP_ABBREVIATIONS, points=True),
+        "note": (
+            "Every rule above is enforced by the exporter, not by advice — the "
+            "margins, the double spacing, the hanging indent and the page-number "
+            "field are written into the .docx itself, and tests assert them "
+            "against the saved file rather than against the builder."
+        ),
+    }
+
+
+@app.get("/api/apa")
+async def apa_reference() -> dict[str, Any]:
+    """APA 7 formatting, readable with no project open.
+
+    This is the reference half: the rules, the five heading levels, the
+    approved typefaces, and worked examples of the reference types that are
+    got wrong most often. The project-scoped route below adds what *your*
+    paper currently does.
+    """
+    report = _apa_reference()
+    report["scope"] = "reference"
+    report["setup"] = [
+        ("Typeface", f"{SETTINGS.default_font or 'Times New Roman'} "
+         f"{APPROVED_FONTS.get(SETTINGS.default_font or 'Times New Roman', 12):g} pt "
+         "(default; changeable per paper)", "§2.19"),
+        ("Margins", "1 inch, all sides", "§2.22"),
+        ("Line spacing", "Double", "§2.21"),
+        ("Page numbers", "Header, flush right, from the title page", "§2.18"),
+    ]
+    report["setup"] = [{"name": n, "value": v, "section": s}
+                       for n, v, s in report["setup"]]
+    report["previews"] = []
+    report["outstanding"] = []
+    return report
+
+
 @app.get("/api/projects/{project_id}/apa")
 async def apa_report(project_id: str) -> dict[str, Any]:
     """What APA 7 conformance this paper currently has, with live previews.
@@ -1180,22 +1429,9 @@ async def apa_report(project_id: str) -> dict[str, Any]:
     project = _load(project_id)
     page = project.title_page
     cited = project.cited_works()
-    context = CitationContext(cited, _group_abbreviations(project))
     font = project.font or SETTINGS.default_font or "Times New Roman"
 
-    previews = []
-    for work in cited[:12]:
-        first = CitationContext(cited, _group_abbreviations(project))
-        previews.append({
-            "key": work.key,
-            "label": work.short_label(),
-            "parenthetical": citations_module.plain(
-                citations_module.intext([work], first)),
-            "narrative": citations_module.preview_author(work, first,
-                                                         narrative=True),
-            "reference": citations_module.plain(
-                citations_module.reference(work, context)),
-        })
+    previews = _preview_rows(cited[:12], _group_abbreviations(project))
 
     variant = page.variant or "student"
     setup = [
@@ -1232,30 +1468,12 @@ async def apa_report(project_id: str) -> dict[str, Any]:
         outstanding.append("No source is cited yet, so the reference list "
                            "would be empty (§2.12).")
 
-    return {
-        "rules": [{"rule": r, "detail": d, "section": s, "group": g}
-                  for r, d, s, g in APA_RULES],
-        "setup": [{"name": n, "value": v, "section": s} for n, v, s in setup],
-        "previews": previews,
-        "outstanding": outstanding,
-        "headings": [
-            {"level": 1, "format": "Centred, bold, title case", "section": "§2.27"},
-            {"level": 2, "format": "Flush left, bold, title case", "section": "§2.27"},
-            {"level": 3, "format": "Flush left, bold italic, title case",
-             "section": "§2.27"},
-            {"level": 4, "format": "Indented, bold, title case, ends with a "
-             "period, text runs on", "section": "§2.27"},
-            {"level": 5, "format": "Indented, bold italic, title case, ends "
-             "with a period, text runs on", "section": "§2.27"},
-        ],
-        "fonts": sorted(APPROVED_FONTS),
-        "note": (
-            "Every rule above is enforced by the exporter, not by advice — the "
-            "margins, the double spacing, the hanging indent and the page-number "
-            "field are written into the .docx itself, and tests assert them "
-            "against the saved file rather than against the builder."
-        ),
-    }
+    report = _apa_reference()
+    report["scope"] = "project"
+    report["setup"] = [{"name": n, "value": v, "section": s} for n, v, s in setup]
+    report["previews"] = previews
+    report["outstanding"] = outstanding
+    return report
 
 
 # ----------------------------------------------------------------- full text
@@ -1535,22 +1753,9 @@ def _group_abbreviations(project: Project) -> dict[str, str]:
     Only well-known agencies are abbreviated. Inventing an acronym for an
     unfamiliar organisation would produce a citation a reader cannot resolve.
     """
-    known = {
-        "Centers for Disease Control and Prevention": "CDC",
-        "World Health Organization": "WHO",
-        "National Institutes of Health": "NIH",
-        "Agency for Healthcare Research and Quality": "AHRQ",
-        "U.S. Preventive Services Task Force": "USPSTF",
-        "American Nurses Association": "ANA",
-        "Institute of Medicine": "IOM",
-        "National Academies of Sciences, Engineering, and Medicine": "NASEM",
-        "Office of Disease Prevention and Health Promotion": "ODPHP",
-        "Joint Commission": "TJC",
-        "American Association of Critical-Care Nurses": "AACN",
-        "Joanna Briggs Institute": "JBI",
-    }
     present = {a.family for w in project.works for a in w.authors if a.is_group}
-    return {name: abbrev for name, abbrev in known.items() if name in present}
+    return {name: abbrev for name, abbrev in KNOWN_GROUP_ABBREVIATIONS.items()
+            if name in present}
 
 
 def _project_payload(project: Project) -> dict[str, Any]:

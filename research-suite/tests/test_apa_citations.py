@@ -447,6 +447,114 @@ def test_no_double_period_after_initials() -> None:
     check("single period after initials", "Smith, J. A. (2022)" in text, True)
 
 
+def test_the_worked_examples_on_the_apa_screen_are_correct() -> None:
+    """Pin the nine examples the APA 7 screen shows.
+
+    They are rendered live by this engine rather than copied out, which makes
+    them a demonstration rather than a claim — and makes them wrong on screen
+    the moment the engine regresses. That is only worth having if the expected
+    output is asserted somewhere, so it is asserted here, exactly, character
+    for character. Each one is a reference type that gets marked wrong.
+    """
+    from app.main import (  # noqa: PLC0415 - imported here to keep this file
+        KNOWN_GROUP_ABBREVIATIONS,  # runnable without the web layer loaded
+        _example_works,             # for the rest of its cases
+        _preview_rows,
+    )
+
+    rows = {row["key"]: row for row in
+            _preview_rows(_example_works(), KNOWN_GROUP_ABBREVIATIONS, points=True)}
+    check("every example carries the rule it demonstrates",
+          all(row["point"] for row in rows.values()), True)
+
+    # §8.17: two authors take an ampersand inside parentheses and "and" in
+    # narrative use. Getting this backwards is the commonest citation error.
+    check("two authors, parenthetical", rows["ex-journal-two"]["parenthetical"],
+          "(Alvarez & Okonkwo, 2023)")
+    check("two authors, narrative", rows["ex-journal-two"]["narrative"],
+          "Alvarez and Okonkwo")
+    check("journal article reference", rows["ex-journal-two"]["reference"],
+          "Alvarez, M. R., & Okonkwo, D. (2023). Nurse staffing ratios and "
+          "inpatient fall rates in adult acute care. Journal of Advanced "
+          "Nursing, 79(4), 1120\u20131133. https://doi.org/10.1111/jan.15487")
+
+    # §8.17: three or more authors are et al. from the *first* citation. The
+    # 6th edition rule of spelling out the first occurrence is the single most
+    # common leftover in papers written with older templates.
+    check("three authors elide from the first citation",
+          rows["ex-journal-three"]["parenthetical"], "(Brennan et al., 2022)")
+    check("but the reference list names all three",
+          rows["ex-journal-three"]["reference"].startswith(
+              "Brennan, K. L., Duffy, S., & Nakamura, H. (2022)."), True)
+
+    # §8.21: a group author is spelled out with its abbreviation the first
+    # time and abbreviated after; the reference list never abbreviates.
+    check("group author, first citation", rows["ex-group-report"]["parenthetical"],
+          "(World Health Organization [WHO], 2021)")
+    check("group author reference is not abbreviated",
+          rows["ex-group-report"]["reference"].startswith(
+              "World Health Organization. (2021)."), True)
+
+    # §9.29: edition in parentheses, publisher with no location, no doubled
+    # period after the closing parenthesis.
+    check("book with an edition", rows["ex-book"]["reference"],
+          "Polit, D. F., & Beck, C. T. (2021). Nursing research: Generating "
+          "and assessing evidence for nursing practice (11th ed.). "
+          "Wolters Kluwer.")
+
+    # §9.28: editors run initial-then-surname after "In", the chapter title is
+    # upright and the book title italic, and pages take "pp." with an en dash.
+    check("chapter in an edited book", rows["ex-chapter"]["reference"],
+          "Ramirez, L. A. (2020). Falls and fall prevention among older "
+          "adults. In R. G. Hughes (Ed.), Patient safety and quality: An "
+          "evidence-based handbook for nurses (pp. 211\u2013238). Agency for "
+          "Healthcare Research and Quality.")
+
+    # §9.31: a thesis carries its type and awarding institution in brackets.
+    check("thesis", rows["ex-thesis"]["reference"],
+          "Whitfield, A. J. (2022). Bedside handoff and patient-reported "
+          "involvement in care [Doctoral dissertation, University of "
+          "Michigan]. https://deepblue.lib.umich.edu/handle/2027.42/example")
+
+    # §9.8: 21 or more authors take the first 19, an ellipsis, then the final
+    # author. Never et al., and never all twenty-four.
+    many = rows["ex-many-authors"]["reference"]
+    check("nineteen names before the ellipsis",
+          many[:many.index(" \u2026 ")].count(".,") >= 19, True)
+    check("ellipsis, then the final author",
+          " \u2026 Zhang, Q. (2024)." in many, True)
+    check("the twentieth author is omitted", "Tanaka" in many, False)
+    check("and et al. never appears in a reference entry",
+          "et al." in many, False)
+
+    # §9.17: no date is n.d., in the citation and the reference alike, and is
+    # never quietly replaced with a guess.
+    check("no date, in text", rows["ex-no-date"]["parenthetical"],
+          "(American Nurses Association [ANA], n.d.)")
+    check("no date, in the reference",
+          "(n.d.)." in rows["ex-no-date"]["reference"], True)
+
+
+def test_the_worked_examples_are_labelled_as_examples() -> None:
+    """They must not be mistakable for sources.
+
+    Nine plausible-looking references on screen are a hazard if anyone thinks
+    they are retrievable. The screen says so in words; this asserts that the
+    data itself never enters a project — the works are built on demand and
+    carry keys no fingerprint would ever produce.
+    """
+    from app.main import _example_works  # noqa: PLC0415
+
+    works = _example_works()
+    check("nine worked examples", len(works), 9)
+    check("all keyed as examples",
+          all(w.key.startswith("ex-") for w in works), True)
+    check("none carries a source database",
+          any(w.source_db for w in works), False)
+    check("and a fresh list is built each time, so nothing is shared state",
+          _example_works()[0] is works[0], False)
+
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

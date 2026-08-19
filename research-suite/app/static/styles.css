@@ -110,6 +110,17 @@ body {
   font-weight: 600;
 }
 
+/* APA 7 is the standard the numbered steps are working toward, not one of
+   them. A separating rule after it says so without a heading. */
+.app-nav button.nav-standard {
+  color: var(--ink);
+  font-weight: 600;
+  margin-right: 0.45rem;
+  border-right: 1px solid var(--border);
+  border-radius: var(--radius) 0 0 var(--radius);
+  padding-right: 0.75rem;
+}
+
 .header-right { display: flex; align-items: center; gap: 0.6rem; margin-left: auto; }
 .project-label { color: var(--ink-muted); font-size: 0.88rem; }
 

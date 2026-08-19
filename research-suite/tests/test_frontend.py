@@ -510,10 +510,31 @@ def test_apa_is_a_first_class_screen() -> None:
           is not None, True)
 
     body = source[source.index("function viewApa("):
-                  source.index("function headingExample(")]
+                  source.index("function settingsTable(")]
     check("it reads the live report", "/apa" in body, True)
-    for section in ("setup", "outstanding", "previews", "headings", "rules"):
+    for section in ("setup", "outstanding", "previews", "headings", "rules",
+                    "examples", "fonts"):
         check(f"it shows {section}", section in body, True)
+
+    # APA 7 leads the nav. It is the standard the numbered steps work toward,
+    # not step nine, and the user said plainly that it was the main thing they
+    # wanted — burying it after "8 · Export" was how it went unnoticed.
+    buttons = re.findall(r'data-view="([^"]+)"', html)
+    check("APA 7 is the first button in the research nav",
+          buttons[0] if buttons else None, "apa")
+    check("and is marked as the standard rather than a step",
+          'data-view="apa" class="nav-standard"' in html, True)
+    check("which the stylesheet sets apart",
+          ".nav-standard" in (STATIC / "styles.css").read_text("utf-8"), True)
+
+    # And it must survive having no project. This is the whole point of the
+    # change: the formatting rules do not depend on a paper existing, and
+    # requiring one to read them repeats the mistake of hiding them behind an
+    # export button.
+    check("viewApa falls back to the project-free route",
+          "'/api/apa'" in body, True)
+    check("and only offers Export when a project is open",
+          "if (project) {" in body, True)
 
 
 def test_the_nav_bars_are_never_hidden_wholesale() -> None:
@@ -561,7 +582,7 @@ def test_the_always_available_screens_stay_reachable() -> None:
     gated_research = set(re.findall(r"'([^']+)'", research.group(1)))
     gated_charting = set(re.findall(r"'([^']+)'", charting.group(1)))
 
-    for view in ("settings", "compliance", "question"):
+    for view in ("settings", "compliance", "question", "apa"):
         check(f"research {view!r} is reachable without a project",
               view not in gated_research, True)
     check("charting 'reference' is reachable without an encounter",

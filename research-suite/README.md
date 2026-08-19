@@ -55,6 +55,59 @@ documents, the slide deck, the figures — works, and is tested.
 
 ---
 
+## APA 7, on screen
+
+APA 7 is the standard the whole research half works toward, and for a long time
+the only place any of it surfaced was a `.docx` at the end of an eight-step
+workflow whose first screen was PICO(T). That was the wrong shape: the framework
+question is step one by *workflow order*, not by importance. **APA 7 now leads the
+navigation**, ahead of the numbered steps, and it reads without a project open —
+the manual does not depend on your having started a paper.
+
+The screen has five parts:
+
+**The defaults every paper starts from**, or, with a project open, *that* paper's
+setup: paper type, typeface and size, margins, spacing and the page-number field,
+each labelled with the section of the Publication Manual it comes from.
+
+**Still to supply** (with a project open). What APA requires that this paper has
+not got yet — a missing title, an unnamed author, a course or instructor absent
+from a student title page, a running head over 50 characters, no cited source.
+Stated as what is missing rather than as a percentage, because a score invites
+treating 90% as good enough when the missing tenth is the title.
+
+**Worked examples of the nine hardest reference types.** Two authors and the
+ampersand-versus-"and" rule (§8.17); three authors and *et al.* from the first
+citation, not the second (§8.17); a group author spelled out with its abbreviation
+and abbreviated after (§8.21); a book with an edition (§9.29); a chapter in an
+edited book (§9.28); an organisation's web page (§9.34); a thesis (§9.31); a
+twenty-four-author trial showing the first nineteen, an ellipsis and the final
+author (§9.8); and a source with no date (§9.17).
+
+They are **rendered by the same citation engine that writes your references**, not
+copied out of the manual — so they are a demonstration of what this code does
+rather than a claim about it, and they break on screen the moment the engine
+regresses. `test_apa_citations.py` asserts all nine character for character. They
+are examples, not sources: nothing there is retrievable and nothing there enters a
+project.
+
+**The five heading levels**, each shown in its own actual formatting — centred
+bold, flush-left bold, flush-left bold italic, and the two indented run-in levels
+that end with a period.
+
+**Every rule the exporter enforces**, twenty-two of them, grouped by layout, front
+matter, structure, quotations, citations, references, and tables and figures, each
+with its manual section. The list lives in `app/main.py` beside the code rather
+than in the front end, because it is a claim about what the code does and should
+be edited in the same commit as anything that would falsify it.
+
+The distinction that matters: these are **enforced, not advised**. The margins,
+the double spacing, the hanging indent and the page-number field are written into
+the OOXML itself, and `test_docx_layout.py` asserts them against the *saved file*
+rather than against the builder that wrote it.
+
+---
+
 ## The charting tab
 
 A second tab, for composing nursing documentation. Everything below it was asked
@@ -984,15 +1037,15 @@ take against Firestore.
 
 | Suite | Checks | What it holds down |
 |---|---|---|
-| `test_apa_citations.py` | 68 | Every APA 7 rule a tool gets wrong: et al. from the first citation, expanded et al. for clashing author groups, year letters, group-author first use, the 21-author ellipsis, sentence-case conversion that preserves COVID-19 and proper nouns, en-dash page ranges, elided range expansion |
+| `test_apa_citations.py` | 89 | Every APA 7 rule a tool gets wrong: et al. from the first citation, expanded et al. for clashing author groups, year letters, group-author first use, the 21-author ellipsis, sentence-case conversion that preserves COVID-19 and proper nouns, en-dash page ranges, elided range expansion; and the nine worked examples shown on the APA 7 screen, asserted character for character so that a demonstration cannot quietly become a wrong one |
 | `test_docx_layout.py` | 85 | Assertions against the saved OOXML: margins, all four font attributes, double spacing, the `PAGE` **field** rather than a literal digit, running head presence by paper type, five distinct heading levels, hanging indents, horizontal-only table borders |
 | `test_evidence.py` | 121 | Real CINAHL/Ovid/PubMed/Zotero/Scopus export shapes; `Review` ≠ systematic review; retraction excluded rather than graded; DOI/PMID/title dedupe; conflicting DOIs kept separate; retraction propagating through a merge |
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
-| `test_security.py` | 51 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
+| `test_security.py` | 82 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
 | `test_research_tools.py` | 273 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say — and that it *does* read a structured abstract stated as a sentence, which is the commonest way a journal writes it and which the parser used to miss entirely |
-| `test_frontend.py` | 130 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them |
+| `test_frontend.py` | 174 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them; and that the screens which must work before anything exists — Settings, Question, Compliance and APA 7 — are not gated behind creating a project |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_fulltext.py` | 227 | Headings matched against the **whole line**, so "Abstract reasoning was assessed" does not re-section the paper; a section carrying across a page break, including a page that *ends* on a heading; a paraphrase located as well as a verbatim run, because a locator that only finds plagiarism is not a locator; an unrelated sentence finding nothing, which is the answer this exists to give; intervals not truncated and brackets balanced; the same number written two ways counted once; and a source that states nothing producing an empty matrix and a `missing` list rather than a filled one |
 | `test_deck.py` | 45 | The class of defect where a feature exists, works, and is reachable from nothing: figures actually packaged into the .pptx, the evidence-level chart recorded on the project rather than only drawn, speaker notes as complete sentences carrying APA in-text citations (including a group-author abbreviation and a quotation locator), no citation invented for an uncited claim, and a deleted image not taking the whole deck with it |
