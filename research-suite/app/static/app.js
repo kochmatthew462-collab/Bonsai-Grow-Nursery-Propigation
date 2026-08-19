@@ -215,9 +215,10 @@ function configGate() {
     notice(state.configError, 'bad'),
     stale
       ? el('div', { class: 'stack' },
-        notice('The token changes every time the server restarts, so a tab '
-          + 'left open — or a URL from an earlier run — stops working. Nothing '
-          + 'is lost: your projects are files on disk.', 'warn'),
+        notice('The token is now stable across restarts, so this should not '
+          + 'recur — but a URL saved before that change, or from a different '
+          + 'checkout, still carries the old one. Nothing is lost: your '
+          + 'projects are files on disk.', 'warn'),
         el('h3', {}, 'What to do'),
         el('ol', { class: 'plain-list' },
           el('li', {}, 'Look at the terminal running the app.'),

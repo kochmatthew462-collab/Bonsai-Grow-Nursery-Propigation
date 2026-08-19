@@ -850,6 +850,27 @@ listening on that port yet. Start it, then open the port in the Ports panel.
 
 ---
 
+## The session token
+
+Generated once and kept in `data/.session-token`, mode 0600. It is in the URL
+the app prints, and the browser hands it back on every request.
+
+It used to be regenerated on every run. That invalidated the open browser tab
+every time the server restarted — after a code change, a Ctrl-C, a crash — and
+produced a stream of "missing or invalid session token" that read as a bug in
+the application rather than as the design working.
+
+**Stability is not a weakening.** The token stops other processes on the machine,
+and pages in other tabs, from driving the API. That is equally true of a stable
+token: anything running as your user can read a rotating one too, including out
+of the terminal it is printed in. The real boundary was always your OS account
+plus the host allowlist. Jupyter's token works the same way for the same reason.
+
+To rotate it, delete the file. To pin it — useful for a bookmark that must keep
+working — set `RESEARCH_SUITE_TOKEN`.
+
+---
+
 ## Security, honestly
 
 The app binds to `127.0.0.1` and requires a session token generated fresh each

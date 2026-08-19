@@ -243,13 +243,56 @@ def load(root: Path | None = None) -> Settings:
         or "Times New Roman"
     )
 
-    # A fresh token each run. Printed once at startup; the browser is handed it
-    # in the launch URL, so nothing else on the machine can reach the API.
+    # The token persists across restarts, in a 0600 file beside the data.
+    #
+    # It used to be regenerated every run, which meant every restart invalidated
+    # the URL in the browser — and a restart is what you do after every code
+    # change, every Ctrl-C, every crash. The result was a stream of "missing or
+    # invalid session token" that looked like a bug in the application and cost
+    # more time than any real defect here.
+    #
+    # This is not a weakening. The token stops other processes and other pages
+    # on the machine from driving the API; that is exactly as true of a stable
+    # token as a rotating one, since a rotating token is equally readable by
+    # anything running as you — including from the terminal it is printed in.
+    # The real boundary was always the OS account plus the host allowlist. It is
+    # the same design Jupyter uses, and for the same reason.
+    #
+    # Delete the file to mint a new one, or set RESEARCH_SUITE_TOKEN to pin it.
     settings.session_token = (
         os.environ.get("RESEARCH_SUITE_TOKEN", "").strip()
-        or secrets.token_urlsafe(24)
+        or _stable_token(settings.data_dir / ".session-token")
     )
     return settings
+
+
+def _stable_token(path: Path) -> str:
+    """Read the saved token, or mint and save one.
+
+    A short token is treated as absent: a truncated or hand-edited file would
+    otherwise weaken the check silently, and silence is the failure mode this
+    whole module is trying to avoid.
+    """
+    try:
+        existing = path.read_text("utf-8").strip()
+        if len(existing) >= 24:
+            return existing
+    except (OSError, UnicodeDecodeError):
+        pass
+
+    token = secrets.token_urlsafe(24)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Created 0600 before anything is written, so the token is never briefly
+        # world-readable on a shared machine.
+        handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(token)
+    except OSError:
+        # An unwritable data directory should not stop the app from running; it
+        # just means the token goes back to being per-run.
+        pass
+    return token
 
 
 def _read_env(path: Path) -> dict[str, str]:

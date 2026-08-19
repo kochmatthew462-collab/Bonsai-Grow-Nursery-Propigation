@@ -305,6 +305,60 @@ def test_the_doctor_only_suggests_tools_that_exist() -> None:
           "Private" in block, True)
 
 
+def test_the_session_token_survives_a_restart() -> None:
+    """A rotating token invalidated the browser URL on every restart.
+
+    Restarting is what you do after every code change, every Ctrl-C and every
+    crash, so the practical effect was a stream of "missing or invalid session
+    token" that read as a bug in the application.
+
+    Stability is not a weakening here. The token stops other local processes
+    and other pages from driving the API, and that is equally true of a stable
+    one — anything running as this user can read it either way, including out
+    of the terminal it is printed in. The boundary was always the OS account
+    plus the host allowlist.
+    """
+    import tempfile
+    from app import settings as settings_module
+
+    with tempfile.TemporaryDirectory() as directory:
+        saved = os.environ.get("RESEARCH_SUITE_DATA")
+        os.environ["RESEARCH_SUITE_DATA"] = directory
+        os.environ.pop("RESEARCH_SUITE_TOKEN", None)
+        try:
+            first = settings_module.load().session_token
+            second = settings_module.load().session_token
+            check("stable across loads", first, second)
+            check("long enough to be a token", len(first) >= 24, True)
+
+            token_file = Path(directory) / ".session-token"
+            check("stored on disk", token_file.exists(), True)
+            check("owner-only permissions",
+                  oct(token_file.stat().st_mode & 0o777), "0o600")
+
+            # A truncated or hand-edited file must not silently weaken it.
+            token_file.write_text("short", "utf-8")
+            replaced = settings_module.load().session_token
+            check("a short file is replaced", len(replaced) >= 24, True)
+            check("and is a different token", replaced != "short", True)
+
+            # Deleting it mints a new one — the documented way to rotate.
+            token_file.unlink()
+            check("a new token after deletion",
+                  settings_module.load().session_token != first, True)
+
+            os.environ["RESEARCH_SUITE_TOKEN"] = "pinned-token-value-abcdefgh"
+            check("an explicit token still wins",
+                  settings_module.load().session_token,
+                  "pinned-token-value-abcdefgh")
+        finally:
+            os.environ.pop("RESEARCH_SUITE_TOKEN", None)
+            if saved is None:
+                os.environ.pop("RESEARCH_SUITE_DATA", None)
+            else:
+                os.environ["RESEARCH_SUITE_DATA"] = saved
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

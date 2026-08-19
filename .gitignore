@@ -18,5 +18,6 @@ research-suite/.env.*
 
 # Local project data, caches and generated documents.
 research-suite/data/
+research-suite/**/.session-token
 research-suite/**/__pycache__/
 research-suite/.venv/

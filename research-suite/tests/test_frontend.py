@@ -601,7 +601,8 @@ def test_render_survives_a_missing_config() -> None:
     # source wraps mid-sentence, so "after the #" is split across two literals.
     flat = re.sub(r"'\s*\+\s*'", "", gate)
     for phrase in ("old session token", "after the #", "bash run.sh",
-                   "Try again", "projects are files on disk"):
+                   "Try again", "projects are files on disk",
+                   "stable across restarts"):
         check(f"the gate explains {phrase!r}", phrase in flat, True)
 
 
