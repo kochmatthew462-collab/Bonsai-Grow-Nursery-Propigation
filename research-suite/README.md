@@ -898,8 +898,36 @@ that would go nowhere, and says what governs access:
 - **The data is as durable as the codespace.** Your API keys and projects live
   in it and go when it does. Export anything you want to keep.
 
-If the forwarded URL 404s, that is GitHub's proxy, not this app: nothing is
-listening on that port yet. Start it, then open the port in the Ports panel.
+### The app starts with the container
+
+Codespaces suspends a container after about thirty minutes idle. Coming back to
+it, the forwarded URL resolved to nothing and the browser said 404 — a message
+about a missing page for what was really a stopped process, and one you could
+only fix from a terminal.
+
+`.devcontainer/devcontainer.json` now starts the app on every container start,
+detached so that the setup shell exiting does not take the server with it, with
+output kept in `/tmp/koch-suite.log` so a failed start is diagnosable after the
+fact. **This takes effect on a codespace rebuild**, not on the next start of an
+existing one: Command Palette → *Codespaces: Rebuild Container*.
+
+One port is forwarded now, not two. Two only ever produced a second candidate
+URL to confuse with the first, and picking the wrong one is a 404 that looks
+exactly like a broken application.
+
+### If the forwarded URL still 404s
+
+That is GitHub's proxy, not this app: nothing is listening on that port. The
+three causes look identical from the browser and need different fixes, so ask
+rather than guess:
+
+```bash
+python3 -m app.doctor
+```
+
+It reports each layer in order — not running, running on a different port,
+bound to loopback where the forwarder cannot see it, or a port that was never
+forwarded — and names the next step for whichever one is broken.
 
 ---
 
@@ -921,6 +949,42 @@ plus the host allowlist. Jupyter's token works the same way for the same reason.
 
 To rotate it, delete the file. To pin it — useful for a bookmark that must keep
 working — set `RESEARCH_SUITE_TOKEN`.
+
+### Why closing the tab used to cost you the token
+
+The page kept the token in `sessionStorage`, which browsers clear when the tab
+closes. So a stable token still meant every new tab was an unauthenticated tab,
+and the only way back in was the launch URL out of the terminal — which in a
+Codespace means finding the terminal, and, if the container had suspended in the
+meantime, starting the app before the forwarded URL would resolve at all.
+
+A token that arrives in the launch URL or a header is now written to a cookie:
+`HttpOnly`, `SameSite=Lax`, `Secure` when the connection is HTTPS, thirty days.
+**Bookmark the plain address without the `#token=` part** — after the first
+visit it works on its own, in a new tab, after a restart, until the cookie
+expires.
+
+`HttpOnly` because the page never needs to read it back, and a token no script
+can read is one no injected script can steal. A cookie does travel automatically
+where a custom header did not, which is the property CSRF exploits, so it is not
+carrying the security on its own: `SameSite=Lax` keeps it off cross-site writes,
+the Origin check refuses cross-origin writes that carry it anyway, and the Host
+allowlist refuses the DNS-rebinding case where the origin looks legitimate. The
+cookie is convenience on top of three checks that do not depend on it.
+
+A cookie the server rejects is **deleted by that rejection**. Without that, a
+stale one is a trap with no exit: the page can neither read an `HttpOnly` cookie
+nor delete it, so every reload would resend the same refused credential.
+
+### Getting the address back
+
+```bash
+python3 -m app.doctor --url
+```
+
+Prints the launch URL and nothing else, works without the virtual environment,
+and reports the port that is *actually* serving rather than the configured one —
+which differ exactly when the link matters most.
 
 ---
 
@@ -1043,9 +1107,9 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
-| `test_security.py` | 96 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
+| `test_security.py` | 116 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
 | `test_research_tools.py` | 273 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say — and that it *does* read a structured abstract stated as a sentence, which is the commonest way a journal writes it and which the parser used to miss entirely |
-| `test_frontend.py` | 175 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them; and that the screens which must work before anything exists — Settings, Question, Compliance and APA 7 — are not gated behind creating a project |
+| `test_frontend.py` | 189 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them; and that the screens which must work before anything exists — Settings, Question, Compliance and APA 7 — are not gated behind creating a project |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_fulltext.py` | 227 | Headings matched against the **whole line**, so "Abstract reasoning was assessed" does not re-section the paper; a section carrying across a page break, including a page that *ends* on a heading; a paraphrase located as well as a verbatim run, because a locator that only finds plagiarism is not a locator; an unrelated sentence finding nothing, which is the answer this exists to give; intervals not truncated and brackets balanced; the same number written two ways counted once; and a source that states nothing producing an empty matrix and a `missing` list rather than a filled one |
 | `test_deck.py` | 45 | The class of defect where a feature exists, works, and is reachable from nothing: figures actually packaged into the .pptx, the evidence-level chart recorded on the project rather than only drawn, speaker notes as complete sentences carrying APA in-text citations (including a group-author abbreviation and a quotation locator), no citation invented for an uncited claim, and a deleted image not taking the whole deck with it |

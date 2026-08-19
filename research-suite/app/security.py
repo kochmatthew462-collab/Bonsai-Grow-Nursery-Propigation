@@ -181,6 +181,77 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+# How long a browser keeps the session cookie. Long, deliberately: the point
+# is that closing the tab does not cost you the token. The token itself is
+# stable across restarts, so a shorter life would only mean re-pasting a URL
+# that has not changed.
+COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+
+
+def token_source(request: "Request", config: SecurityConfig) -> str:
+    """Where a valid token arrived from, or "" if none did.
+
+    The distinction matters for one thing only: a token that came in the URL
+    or a header is worth writing to a cookie, and one that came *from* the
+    cookie is already there.
+    """
+    for name, supplied in (
+            ("header", request.headers.get(TOKEN_HEADER, "")),
+            ("query", request.query_params.get("token", "")),
+            ("cookie", request.cookies.get(TOKEN_COOKIE, "")),
+    ):
+        if supplied and config.token_valid(supplied):
+            return name
+    return ""
+
+
+def remember_token(response, config: SecurityConfig, *, secure: bool) -> None:
+    """Persist the session token in a cookie so closing the tab is free.
+
+    The front end kept the token in `sessionStorage`, which browsers clear when
+    the tab closes. So every new tab was an unauthenticated tab, and the only
+    way back in was the launch URL out of the terminal — which in a Codespace
+    means finding the terminal, and if the container had been suspended,
+    starting the app again first. "I do not want to do this every time I exit
+    out of the tab" is the accurate description of that design.
+
+    HttpOnly on purpose: the page never needs to read this back, and a token
+    no script can read is one no injected script can exfiltrate.
+
+    A cookie travels automatically where a custom header did not, which is
+    exactly the property that makes CSRF possible, so it is not the only thing
+    standing between a hostile page and this app: SameSite=Lax keeps it off
+    cross-site writes, the Origin check refuses cross-origin writes that carry
+    it anyway, and the Host allowlist refuses the DNS-rebinding case where the
+    origin looks legitimate. The cookie is a convenience layer on top of three
+    checks that do not depend on it.
+    """
+    response.set_cookie(
+        TOKEN_COOKIE,
+        config.token,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        # Only over HTTPS when the connection is HTTPS. Setting it
+        # unconditionally would mean the cookie is silently never stored on a
+        # plain-http localhost run, which is most of them.
+        secure=secure,
+        path="/",
+    )
+
+
+def forget_token(response) -> None:
+    """Clear a cookie the server just rejected.
+
+    Without this a wrong cookie is a trap with no way out from inside the
+    browser: every reload resends it, every retry resends it, and the page can
+    neither read it nor delete it. The same shape of trap as the one
+    `sessionStorage` produced, and it self-heals for the same reason — the
+    thing that rejected the credential is the thing that discards it.
+    """
+    response.delete_cookie(TOKEN_COOKIE, path="/")
+
+
 async def guard(request: "Request", config: SecurityConfig) -> None:
     """Reject anything that fails the host or token check."""
     from fastapi import HTTPException

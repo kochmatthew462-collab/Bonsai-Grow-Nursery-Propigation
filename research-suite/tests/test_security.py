@@ -464,6 +464,134 @@ def test_a_restart_reclaims_its_own_port() -> None:
     check("a live listener still refuses a second bind", refused, True)
 
 
+class _FakeRequest:
+    """Enough of a Request for token_source: three places a token can be."""
+
+    def __init__(self, *, header="", query="", cookie=""):
+        self.headers = {security.TOKEN_HEADER: header} if header else {}
+        self.query_params = {"token": query} if query else {}
+        self.cookies = {security.TOKEN_COOKIE: cookie} if cookie else {}
+
+
+class _FakeResponse:
+    def __init__(self):
+        self.set = {}
+        self.deleted = []
+
+    def set_cookie(self, name, value, **kwargs):
+        self.set[name] = (value, kwargs)
+
+    def delete_cookie(self, name, **kwargs):
+        self.deleted.append(name)
+
+
+def test_the_token_survives_closing_the_tab() -> None:
+    """sessionStorage is cleared on tab close, which made every new tab dead.
+
+    The front end held the token in `sessionStorage`. Closing the tab threw it
+    away, so the only way back in was the launch URL out of the terminal — and
+    in a Codespace that means finding the terminal, and, if the container had
+    suspended in the meantime, starting the app first. The user's description
+    was exact: having to do this every time you exit out of the tab.
+
+    So a token that arrives in the URL or a header is written to a cookie, and
+    the cookie is what the next tab presents.
+    """
+    config = security.SecurityConfig("real-token", "127.0.0.1", 8765)
+
+    check("a token in the launch URL is recognised",
+          security.token_source(_FakeRequest(query="real-token"), config), "query")
+    check("a token in the header is recognised",
+          security.token_source(_FakeRequest(header="real-token"), config), "header")
+    check("a token already in the cookie is recognised as such",
+          security.token_source(_FakeRequest(cookie="real-token"), config), "cookie")
+    check("a wrong token is no source at all",
+          security.token_source(_FakeRequest(query="wrong"), config), "")
+    check("and neither is nothing",
+          security.token_source(_FakeRequest(), config), "")
+
+    response = _FakeResponse()
+    security.remember_token(response, config, secure=False)
+    value, options = response.set[security.TOKEN_COOKIE]
+    check("the cookie carries the token", value, "real-token")
+    check("no script can read it", options["httponly"], True)
+    check("it is not sent on cross-site writes", options["samesite"], "lax")
+    check("it outlives the tab by a long way",
+          options["max_age"] >= 60 * 60 * 24 * 7, True)
+    check("and covers the whole app", options["path"], "/")
+
+
+def test_the_cookie_is_https_only_when_the_connection_is() -> None:
+    """Unconditional Secure would mean never stored on a plain-http run.
+
+    Which is most of them: localhost is http, and a cookie marked Secure is
+    silently dropped there. Marking it by scheme keeps the Codespaces case —
+    which is HTTPS — protected without breaking the local case.
+    """
+    config = security.SecurityConfig("real-token", "127.0.0.1", 8765)
+
+    local = _FakeResponse()
+    security.remember_token(local, config, secure=False)
+    check("plain http: not marked Secure",
+          local.set[security.TOKEN_COOKIE][1]["secure"], False)
+
+    forwarded = _FakeResponse()
+    security.remember_token(forwarded, config, secure=True)
+    check("https: marked Secure",
+          forwarded.set[security.TOKEN_COOKIE][1]["secure"], True)
+
+    # And the middleware must decide that from the request scheme rather than
+    # hard-coding either answer.
+    main = (Path(__file__).resolve().parents[1] / "app" / "main.py"
+            ).read_text("utf-8")
+    check("the middleware keys Secure off the scheme",
+          'secure=request.url.scheme == "https"' in main, True)
+
+
+def test_a_rejected_cookie_is_discarded() -> None:
+    """Otherwise a wrong cookie is a trap with no way out from the browser.
+
+    The page can neither read an HttpOnly cookie nor delete it, so every reload
+    and every retry would resend the same rejected credential — the same shape
+    of trap that storing a bad token used to produce, and it self-heals for the
+    same reason: whatever rejects the credential is what discards it.
+    """
+    response = _FakeResponse()
+    security.forget_token(response)
+    check("the cookie is cleared", response.deleted, [security.TOKEN_COOKIE])
+
+    main = (Path(__file__).resolve().parents[1] / "app" / "main.py"
+            ).read_text("utf-8")
+    guard = main[main.index("async def enforce_security("):
+                 main.index("# --------------------------------------------------------------------- shell")]
+    check("a 401 clears it", "if error.status_code == 401:" in guard, True)
+    check("by calling forget_token", "security.forget_token(" in guard, True)
+    # Only a token that arrived from outside is worth writing back; re-setting
+    # one that came from the cookie is a wasted header on every request.
+    check("and only an external token is remembered",
+          'arrived_by in ("header", "query")' in guard, True)
+
+
+def test_the_cookie_does_not_stand_alone_against_csrf() -> None:
+    """A cookie travels automatically where a custom header did not.
+
+    That is precisely the property CSRF exploits, so the checks that do not
+    depend on the cookie have to still be there: the Host allowlist for the
+    DNS-rebinding case, and the Origin check on writes.
+    """
+    with not_a_codespace():
+        config = security.SecurityConfig("tok", "127.0.0.1", 8765)
+        check("an unknown Host is still refused",
+              config.host_allowed("evil.test"), False)
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "security.py"
+              ).read_text("utf-8")
+    guard = source[source.index("async def guard("):source.index("def startup_banner(")]
+    check("writes still check the Origin",
+          'request.method not in ("GET", "HEAD", "OPTIONS")' in guard, True)
+    check("and refuse a foreign one", "Cross-origin request from" in guard, True)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

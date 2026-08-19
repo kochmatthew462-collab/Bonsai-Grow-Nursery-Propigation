@@ -12,7 +12,8 @@ names the next step for whichever layer is broken. It answers questions rather
 than asserting health, and where it cannot determine something it says so
 instead of guessing.
 
-    python -m app.doctor
+    python -m app.doctor          the full check
+    python -m app.doctor --url    just the address to open
 """
 
 from __future__ import annotations
@@ -60,7 +61,33 @@ def _get(url: str, timeout: float = 4.0) -> tuple[int, str]:
         return 0, f"{type(error).__name__}: {error}"
 
 
+def print_url() -> int:
+    """Just the URL, for when nothing is wrong and you only lost the link.
+
+    Separate from the full check because that is the common case now: the app
+    starts with the container and the cookie outlives the tab, so what someone
+    usually needs is the address, not a diagnosis. It reports the port that is
+    actually serving rather than the configured one, since those differ exactly
+    when the link matters most.
+    """
+    settings = settings_module.load()
+    config = security.SecurityConfig(
+        settings.session_token, settings.host, settings.port)
+    live = [p for p in range(settings.port, settings.port + 12)
+            if _probe("127.0.0.1", p, 0.4)]
+    if not live:
+        print("\n  Not running. Start it with `bash run.sh`, then run this "
+              "again.\n")
+        return 1
+    config.rebind(settings.port if settings.port in live else live[0])
+    print(f"\n  {config.launch_url()}\n")
+    return 0
+
+
 def main() -> int:
+    if "--url" in sys.argv[1:]:
+        return print_url()
+
     settings = settings_module.load()
     config = security.SecurityConfig(
         settings.session_token, settings.host, settings.port)
@@ -182,7 +209,7 @@ def main() -> int:
     # 6. The URL to actually open.
     print()
     print("  Open this, including everything after the '#':")
-    print(f"    {config.public_url()}#token={settings.session_token}")
+    print(f"    {config.launch_url()}")
     print()
     return 0
 

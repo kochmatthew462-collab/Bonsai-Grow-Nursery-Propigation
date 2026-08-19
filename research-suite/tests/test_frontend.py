@@ -838,6 +838,73 @@ def test_the_launcher_refreshes_a_stale_environment() -> None:
               script.count("pip install --quiet -r requirements.txt") >= 2, True)
 
 
+def test_the_devcontainer_starts_the_app_and_forwards_one_port() -> None:
+    """Closing the tab should not cost you a terminal session.
+
+    Codespaces suspends the container after about thirty minutes idle. Coming
+    back to it, the forwarded URL resolved to nothing and the browser said 404
+    — a message about a missing page for what was really a stopped process. So
+    the app starts with the container.
+
+    The file is also checked for the two defects it shipped with: a duplicate
+    `onAutoForward` key, which is legal JSON and silently discards one of the
+    two values, and a second forwarded port, which only ever produced a second
+    URL to confuse with the first.
+    """
+    import json
+    import re
+
+    path = ROOT.parent / ".devcontainer" / "devcontainer.json"
+    check("there is a devcontainer", path.exists(), True)
+    if not path.exists():
+        return
+
+    raw = path.read_text("utf-8")
+    body = re.sub(r"^\s*//.*$", "", raw, flags=re.M)
+    try:
+        config = json.loads(body)
+    except json.JSONDecodeError as error:
+        check(f"devcontainer.json parses ({error})", False, True)
+        return
+    check("devcontainer.json parses once comments are stripped", True, True)
+
+    check("it starts the app on every container start",
+          "postStartCommand" in config, True)
+    start = config.get("postStartCommand", "")
+    check("running the launcher rather than a bare python",
+          "run.sh" in start, True)
+    check("detached, so the setup shell exiting does not kill it",
+          "setsid" in start or "nohup" in start, True)
+    check("with output kept, so a failed start is diagnosable",
+          ">" in start, True)
+
+    # One port. Two meant two candidate URLs, and picking the wrong one is a
+    # 404 that looks exactly like a broken application.
+    check("exactly one forwarded port", config.get("forwardPorts"), [8765])
+
+    attributes = config.get("portsAttributes", {}).get("8765", {})
+    check("the port is private", attributes.get("visibility"), "private")
+    check("and opens itself", attributes.get("onAutoForward"), "openBrowser")
+
+    # A duplicate key parses, keeps the last value and drops the first without
+    # a word. This file had one.
+    keys = re.findall(r'"(\w+)"\s*:', raw[raw.index('"8765"'):raw.index("postCreateCommand")])
+    check("no duplicated key in the port attributes",
+          len(keys) == len(set(keys)), True)
+
+
+def test_the_launch_url_is_recoverable_in_one_command() -> None:
+    """The address is what someone actually needs, not a diagnosis."""
+    source = (ROOT / "app" / "doctor.py").read_text("utf-8")
+    check("the doctor has a --url mode", '"--url" in sys.argv' in source, True)
+    check("which reports the port actually serving",
+          "config.rebind(" in source, True)
+    check("and asks for the launch URL rather than rebuilding it",
+          "config.launch_url()" in source, True)
+    check("no hand-assembled token fragment anywhere in it",
+          "#token=" in source, False)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

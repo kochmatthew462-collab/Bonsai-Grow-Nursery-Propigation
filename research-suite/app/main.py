@@ -79,8 +79,29 @@ async def enforce_security(request: Request, call_next):
     try:
         await security.guard(request, SECURITY)
     except HTTPException as error:
-        return JSONResponse({"detail": error.detail}, status_code=error.status_code)
+        rejected = JSONResponse({"detail": error.detail},
+                                status_code=error.status_code)
+        # A cookie the server just refused must not survive to be resent on
+        # every reload. Clearing it here is what makes a stale one recoverable
+        # from inside the browser, where the page can neither read nor delete
+        # it itself.
+        if error.status_code == 401:
+            security.forget_token(rejected)
+        return rejected
+
+    # Where the token came from, decided before the response exists because the
+    # request is what carries it.
+    arrived_by = security.token_source(request, SECURITY)
+
     response = await call_next(request)
+
+    # Remember a token that arrived in the launch URL or a header, so that
+    # closing the tab does not cost it. The front end holds it in
+    # sessionStorage, which the browser clears on tab close — which is why
+    # every new tab needed the launch URL out of the terminal again.
+    if arrived_by in ("header", "query"):
+        security.remember_token(
+            response, SECURITY, secure=request.url.scheme == "https")
 
     # Never cache the shell or its scripts.
     #
