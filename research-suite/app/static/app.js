@@ -15,6 +15,7 @@
 const state = {
   token: '',
   config: null,
+  configError: '',
   project: null,
   view: 'projects',
   busy: false,
@@ -156,6 +157,16 @@ function render() {
   const host = document.getElementById('view');
   host.replaceChildren();
 
+  // Nothing can be drawn before /api/config answers, and shell.js calls
+  // render() the moment the scripts load — before the fetch has finished, and
+  // again if it failed. Every view reads state.config, so without this the
+  // first paint throws "Cannot read properties of null (reading 'settings')"
+  // and the real cause — usually a stale token — never reaches the screen.
+  if (!state.config) {
+    host.append(configGate());
+    return;
+  }
+
   if (VIEWS_NEEDING_A_PROJECT.has(state.view) && !state.project) {
     host.append(el('section', { class: 'stack' },
       el('h1', {}, 'Open a project first'),
@@ -180,6 +191,51 @@ function render() {
         'Back to projects')));
     throw error;                      // still surfaces in the console
   }
+}
+
+/* What to show when the application cannot talk to its own server.
+
+   This is nearly always a stale session token: the token changes every time
+   the server restarts, and an open tab or a bookmarked URL still carries the
+   old one. The old behaviour was a toast that faded after nine seconds and a
+   thrown TypeError underneath it — so the screen said "That screen failed to
+   draw. Cannot read properties of null" and the actual answer was gone. */
+
+function configGate() {
+  if (!state.configError) {
+    return el('section', { class: 'stack' },
+      el('h1', {}, 'Connecting…'),
+      el('p', { class: 'hint' }, 'Loading settings from the local server.'));
+  }
+
+  const stale = /token/i.test(state.configError);
+  return el('section', { class: 'stack' },
+    el('h1', {}, stale ? 'This link has an old session token'
+      : 'Cannot reach the local server'),
+    notice(state.configError, 'bad'),
+    stale
+      ? el('div', { class: 'stack' },
+        notice('The token changes every time the server restarts, so a tab '
+          + 'left open — or a URL from an earlier run — stops working. Nothing '
+          + 'is lost: your projects are files on disk.', 'warn'),
+        el('h3', {}, 'What to do'),
+        el('ol', { class: 'plain-list' },
+          el('li', {}, 'Look at the terminal running the app.'),
+          el('li', {}, 'Copy the whole Open: line, including everything after '
+            + 'the # — that part is the token.'),
+          el('li', {}, 'Paste it into the address bar.')),
+        el('p', { class: 'hint' }, 'If the terminal shows no banner, the app '
+          + 'is not running. Start it with bash run.sh and leave it running.'))
+      : el('p', { class: 'hint' }, 'The server may have stopped. Start it with '
+        + 'bash run.sh, then reload from the URL it prints.'),
+    el('button', {
+      class: 'button',
+      onclick: () => guard(async () => {
+        state.config = await api('/api/config');
+        state.configError = '';
+        render();
+      }),
+    }, 'Try again'));
 }
 
 const VIEWS = {
@@ -1710,11 +1766,19 @@ document.getElementById('switch-project').addEventListener('click', () => {
 });
 
 takeToken();
-guard(async () => {
-  state.config = await api('/api/config');
-  for (const warning of state.config.warnings) toast(warning, true);
+(async () => {
+  // Deliberately not wrapped in guard(): guard turns a failure into a toast
+  // that fades, and this failure has to stay on screen — it is the one the
+  // user most needs to read, and every view depends on the result.
+  try {
+    state.config = await api('/api/config');
+    state.configError = '';
+    for (const warning of state.config.warnings) toast(warning, true);
+  } catch (error) {
+    state.configError = error.message || String(error);
+  }
   render();
-});
+})();
 
 /* ============================================================ question framing */
 

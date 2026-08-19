@@ -550,6 +550,37 @@ def test_the_always_available_screens_stay_reachable() -> None:
           "chartState.view !== 'reference'" in chart, True)
 
 
+def test_render_survives_a_missing_config() -> None:
+    """Nothing can be drawn before /api/config answers.
+
+    shell.js calls render() as soon as the scripts load, before the fetch has
+    finished — and again if it failed. Every view reads state.config, so the
+    first paint threw "Cannot read properties of null (reading 'settings')" and
+    the real cause, a stale session token, never reached the screen: it was a
+    toast that faded.
+    """
+    source = _source("app.js")
+    body = source[source.index("function render()"):source.index("const VIEWS = {")]
+    check("render checks for the config first", "if (!state.config)" in body, True)
+    check("and paints a gate instead of a view", "configGate()" in body, True)
+    check("the gate is declared", "function configGate()" in source, True)
+
+    # The bootstrap must record *why* it failed rather than letting guard()
+    # swallow it into a toast.
+    boot = source[source.index("takeToken();"):]
+    check("bootstrap stores the failure", "state.configError" in boot, True)
+    check("bootstrap renders either way", boot.count("render()") >= 1, True)
+    check("state declares the field", "configError:" in source, True)
+
+    gate = source[source.index("function configGate()"):source.index("const VIEWS = {")]
+    # Phrases are checked in a form that survives string concatenation: the
+    # source wraps mid-sentence, so "after the #" is split across two literals.
+    flat = re.sub(r"'\s*\+\s*'", "", gate)
+    for phrase in ("old session token", "after the #", "bash run.sh",
+                   "Try again", "projects are files on disk"):
+        check(f"the gate explains {phrase!r}", phrase in flat, True)
+
+
 def test_research_routes_are_reachable_from_the_ui() -> None:
     """The same check on the research side, where it was not being run.
 
