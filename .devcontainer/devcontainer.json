@@ -6,15 +6,25 @@
   // returns 404 while the application is running perfectly well inside the
   // container. Declaring it here means the port exists from the moment the
   // codespace starts, rather than only once something binds to it.
-  "forwardPorts": [8765],
+  "forwardPorts": [8765, 3000],
   "portsAttributes": {
     "8765": {
       "label": "Koch Clinical Suite",
+      // Opens the browser as soon as the app binds, so nobody has to find the
+      // PORTS panel or copy a URL out of the terminal. The whole reason this
+      // file exists is that a forwarded port nobody told the editor about
+      // produces a 404 that looks like a broken application.
+      "onAutoForward": "openBrowser",
       // Private: reachable by the codespace owner's GitHub account and nobody
       // else. Do not change this to "public" — the session token would become
       // the only protection, and it travels in the URL.
       "visibility": "private",
-      "onAutoForward": "notify"
+      "onAutoForward": "openBrowser"
+    },
+    "3000": {
+      "label": "Koch Clinical Suite (alternate port)",
+      "visibility": "private",
+      "onAutoForward": "openBrowser"
     }
   },
 
