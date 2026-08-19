@@ -757,11 +757,17 @@ def test_an_unclaimable_port_fails_loudly() -> None:
     check("it raises rather than returning", "raise SystemExit" in claim, True)
     for phrase in ("already running in another terminal", "RESEARCH_SUITE_PORT"):
         check(f"the failure explains {phrase!r}", phrase in claim, True)
-    # Asserted on the call, not the constant's name: the source *comment*
-    # explains why SO_REUSEADDR is absent, and a name-based check matched that
-    # comment and failed. Comments are prose; setsockopt is behaviour.
-    check("it sets no socket option that would let a bind succeed alongside "
-          "an existing listener", "setsockopt" not in claim, True)
+    # This check used to demand that *no* socket option be set at all, on the
+    # reasoning that any of them would let this bind succeed alongside a live
+    # listener. That reasoning was wrong about which option does what, and the
+    # cost was real: without SO_REUSEADDR a restart within a couple of minutes
+    # of serving a page could not rebind its own port, hopped to the next one,
+    # and 404'd every Codespace URL the user already had. Only SO_REUSEPORT
+    # allows two live listeners, and it must stay absent.
+    check("it reclaims its own TIME_WAIT remnants",
+          "socket.SO_REUSEADDR, 1" in claim, True)
+    check("but sets nothing that would admit a second live listener",
+          "socket.SO_REUSEPORT," in claim, False)
 
 
 def test_shell_scripts_are_pinned_to_lf() -> None:

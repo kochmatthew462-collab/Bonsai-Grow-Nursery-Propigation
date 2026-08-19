@@ -121,6 +121,16 @@ class SecurityConfig:
             return f"https://{self.codespace}/"
         return f"http://{'localhost' if self.local_only else self.host}:{self.port}/"
 
+    def launch_url(self) -> str:
+        """The address to actually open, token included.
+
+        Separate from `public_url` because the token is what makes the URL
+        work, and leaving the two callers to append it themselves is a defect
+        waiting to happen — the second one did exactly that and printed an
+        address that answers "Missing or invalid session token".
+        """
+        return f"{self.public_url()}#token={self.token}"
+
     def host_allowed(self, header: str) -> bool:
         """Check the Host header, which is the DNS-rebinding defence.
 
@@ -222,12 +232,11 @@ async def guard(request: "Request", config: SecurityConfig) -> None:
 def startup_banner(config: SecurityConfig, warnings: list[str]) -> str:
     """What the user sees in the terminal. The URL includes the token so
     clicking it is all that is needed."""
-    url = config.public_url()
     lines = [
         "",
         "  Koch Research Suite",
         "  " + "─" * 62,
-        f"  Open:  {url}#token={config.token}",
+        f"  Open:  {config.launch_url()}",
         "",
     ]
     if config.codespace:

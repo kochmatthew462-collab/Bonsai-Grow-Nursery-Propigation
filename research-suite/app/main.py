@@ -115,9 +115,16 @@ async def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text("utf-8"))
 
 
+# The marker that lets one run recognise another. `{"status": "ok"}` alone
+# could be any health endpoint, and the difference matters: a port held by our
+# own earlier run should send you to that run, while a port held by something
+# else should move us out of its way.
+HEALTH_MARKER = "koch-clinical-suite"
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "app": HEALTH_MARKER}
 
 
 if STATIC_DIR.exists():
@@ -1777,6 +1784,31 @@ def _project_payload(project: Project) -> dict[str, Any]:
     return payload
 
 
+def _existing_run(port: int, timeout: float = 1.5) -> bool:
+    """Whether the thing already holding `port` is another run of this app.
+
+    Worth a network round trip on startup because of what happens otherwise.
+    `_claim_port` walks forward when a port is busy, so a second `bash run.sh`
+    quietly becomes a second application on a second port — and in a Codespace
+    the forwarded URL carries the port number, so the address you had memorised
+    or bookmarked now points at nothing and GitHub answers 404. Three stale
+    runs is how a request for port 3000 ends up served on 3003.
+
+    Connecting to 127.0.0.1 rather than to the bind host on purpose: bound to
+    0.0.0.0 there is no route to "0.0.0.0" to connect back to.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/healthz", timeout=timeout) as response:
+            return json.loads(response.read(200)).get("app") == HEALTH_MARKER
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+
+
 def _claim_port(host: str, preferred: int, *, tries: int = 12):
     """Take the port before anything is printed, and return the live socket.
 
@@ -1797,9 +1829,16 @@ def _claim_port(host: str, preferred: int, *, tries: int = 12):
     for offset in range(tries):
         port = preferred + offset
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # Deliberately no SO_REUSEADDR: the whole point is to fail when someone
-        # else holds the port, and on some platforms that option would let this
-        # bind succeed alongside them.
+        # SO_REUSEADDR, which an earlier comment here refused on the grounds
+        # that this must fail when someone else holds the port. It still does:
+        # this option does not permit binding a port another process is
+        # actively listening on — that is SO_REUSEPORT, which is not set. What
+        # it permits is binding over the TIME_WAIT remnants of connections
+        # *this* app closed, and without it a restart within a couple of
+        # minutes of serving a page could not reclaim its own port and hopped
+        # to the next one. In a Codespace the forwarded URL carries the port,
+        # so that hop silently 404s every address the user already had.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, port))
             sock.listen(128)
@@ -1829,6 +1868,28 @@ def run() -> None:
     # The port is claimed before the banner is composed, so the URL in the
     # banner is guaranteed to be one something is actually listening on.
     preferred = SETTINGS.port
+
+    # If this app is already running on the requested port, say so and stop.
+    # Starting a second copy on the next free port is what produced the 404
+    # this guard exists to prevent: the forwarded Codespace URL carries the
+    # port number, so a run that quietly moved from 3000 to 3003 left every
+    # 3000 address — the bookmark, the open tab, the one in the earlier
+    # banner — pointing at nothing.
+    if _existing_run(preferred):
+        SECURITY.rebind(preferred)
+        print(f"""
+  Already running on port {preferred}. This did not start a second copy.
+
+  Open:  {SECURITY.launch_url()}
+
+  That is the run that is already going, and the token is the same one — it
+  is stored, not regenerated per run, so this URL keeps working.
+
+  To stop it, press Ctrl-C in the terminal that is running it. If you cannot
+  find that terminal, `pkill -f 'app.main'` will stop every copy.
+""", flush=True)
+        return
+
     sock, port, moved = _claim_port(SETTINGS.host, preferred)
     SETTINGS.port = port
     SECURITY.rebind(port)
@@ -1836,11 +1897,12 @@ def run() -> None:
     warnings = [w for w in [settings_module.contact_email_warning(SETTINGS)] if w]
     if moved is not None:
         warnings.insert(0, (
-            f"Port {preferred} is in use, so this run is on {port} instead. "
-            f"Something else is already listening on {preferred} — most often "
-            f"an earlier run of this app in another terminal. Use the URL "
-            f"above; a tab open on {preferred} is a different, older run with "
-            f"a different token."
+            f"Port {preferred} is in use by another program, so this run is "
+            f"on {port} instead. It is not an earlier copy of this app — that "
+            f"case is detected and would have sent you to it. Use the URL "
+            f"above and not any {preferred} address you have open: in a "
+            f"Codespace the forwarded URL carries the port number, so a "
+            f"{preferred} link now points at nothing and answers 404."
         ))
     if not SETTINGS.key("anthropic"):
         warnings.append(

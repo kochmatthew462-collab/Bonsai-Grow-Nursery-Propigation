@@ -359,6 +359,111 @@ def test_the_session_token_survives_a_restart() -> None:
                 os.environ["RESEARCH_SUITE_DATA"] = saved
 
 
+def test_the_launch_url_always_carries_the_token() -> None:
+    """A URL without the fragment is refused, so nothing may print a bare one.
+
+    The "already running" message did exactly that: it called `public_url()`,
+    which stops at the port, and printed an address that answers "Missing or
+    invalid session token". The banner had been appending the fragment itself,
+    so the two callers could not help but drift. One method now owns it.
+    """
+    with not_a_codespace():
+        config = security.SecurityConfig("tok-abc", "127.0.0.1", 8765)
+        check("launch url carries the token", config.launch_url(),
+              "http://localhost:8765/#token=tok-abc")
+        check("and is the public url plus the fragment",
+              config.launch_url().startswith(config.public_url()), True)
+
+    with codespace():
+        config = security.SecurityConfig("tok-abc", "0.0.0.0", 8765)
+        check("forwarded launch url too", config.launch_url(),
+              f"https://{FORWARDED}/#token=tok-abc")
+
+    # And the banner must use it rather than reassembling the URL, which is
+    # how the two drifted in the first place.
+    source = (Path(__file__).resolve().parents[1] / "app" / "security.py"
+              ).read_text("utf-8")
+    banner = source[source.index("def startup_banner("):]
+    check("the banner prints launch_url()", "config.launch_url()" in banner, True)
+    check("and does not rebuild the fragment itself",
+          "#token=" in banner.split("def ")[0], False)
+
+
+def test_a_second_run_is_sent_to_the_first_rather_than_hopping() -> None:
+    """The 404 this exists to prevent.
+
+    `_claim_port` walks forward when a port is busy, so a second `bash run.sh`
+    quietly became a second application on a second port. In a Codespace the
+    forwarded URL carries the port number, so every address the user already
+    had — the bookmark, the open tab, the URL in the earlier banner — pointed
+    at nothing and GitHub answered 404. It is checked here against the source
+    rather than by starting two servers, because the ordering is the point:
+    the existing-run probe must come *before* the port walk.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py"
+              ).read_text("utf-8")
+
+    check("there is an existing-run probe", "def _existing_run(" in source, True)
+    check("keyed on a marker rather than the word 'ok'",
+          'HEALTH_MARKER = "koch-clinical-suite"' in source, True)
+    check("which /healthz actually returns",
+          '"app": HEALTH_MARKER' in source, True)
+
+    run = source[source.index("def run() -> None:"):]
+    probe = run.index("_existing_run(preferred)")
+    walk = run.index("_claim_port(SETTINGS.host, preferred)")
+    check("the probe runs before the port walk", probe < walk, True)
+    check("and a match returns instead of starting a second copy",
+          "return" in run[probe:walk], True)
+    check("naming the address that does work",
+          "SECURITY.launch_url()" in run[probe:walk], True)
+
+
+def test_a_restart_reclaims_its_own_port() -> None:
+    """Without SO_REUSEADDR a restart could not rebind, and the port moved.
+
+    A comment here used to refuse the option, reasoning that this must fail
+    when someone else holds the port. It still does — SO_REUSEADDR does not
+    permit binding a port another process is actively listening on; that is
+    SO_REUSEPORT, which is not set. What it does permit is binding over the
+    TIME_WAIT remnants of connections this app itself closed, and without it
+    stopping the server and starting it again within a couple of minutes of
+    serving a page moved the app to the next port — which, in a Codespace,
+    404s every URL the user already had.
+    """
+    import socket
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py"
+              ).read_text("utf-8")
+    claim = source[source.index("def _claim_port("):source.index("def run() -> None:")]
+    check("the listener sets SO_REUSEADDR",
+          "setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)" in claim, True)
+    # Matched as a call, not as a word: the comment above the setsockopt
+    # explains why SO_REUSEPORT is *not* used, and a bare substring test
+    # therefore matches the explanation and fails on correct code.
+    check("and not SO_REUSEPORT, which would allow two live listeners",
+          "socket.SO_REUSEPORT," in claim, False)
+
+    # The behaviour itself, not just the source: with the same option set, a
+    # second bind against a live listener must still fail.
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", 0))
+    held.listen(4)
+    port = held.getsockname()[1]
+    second = socket.socket()
+    second.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        second.bind(("127.0.0.1", port))
+        refused = False
+    except OSError:
+        refused = True
+    finally:
+        second.close()
+        held.close()
+    check("a live listener still refuses a second bind", refused, True)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):
