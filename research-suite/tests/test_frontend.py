@@ -574,6 +574,53 @@ def test_the_shell_and_scripts_are_never_cached() -> None:
           "request.url.path" in middleware, True)
 
 
+def test_a_rejected_token_is_forgotten() -> None:
+    """One stale URL used to lock the page out permanently.
+
+    takeToken stores whatever arrives in the fragment and then strips the
+    fragment from the address bar. So pasting a stale URL put the bad token in
+    sessionStorage, every reload read it back, and the retry resent it — there
+    was no way out from inside the page, and the only escape was pasting a
+    *different* URL, which is what someone stuck in this state does not have.
+    """
+    source = _source("app.js")
+    check("there is a single writer for the token",
+          "function setToken(" in source, True)
+    check("and a way to clear it", "function forgetToken(" in source, True)
+
+    boot = source[source.index("takeToken();"):]
+    check("a rejected token is forgotten before the next load",
+          "forgetToken()" in boot, True)
+
+    # takeToken must go through setToken rather than writing storage itself,
+    # so clearing cannot be bypassed by a future edit.
+    taker = source[source.index("function takeToken()"):
+                   source.index("function setToken(")]
+    check("takeToken delegates the write", "setToken(" in taker, True)
+    check("and does not write storage directly",
+          "sessionStorage.setItem" in taker, False)
+
+
+def test_the_gate_accepts_a_pasted_token_or_url() -> None:
+    """The escape hatch. Someone locked out is copying from a terminal, and
+    either the whole launch URL or the bare token is a reasonable thing to
+    grab, so both are accepted."""
+    source = _source("app.js")
+    check("there is a paste box", "function tokenBox(" in source, True)
+    check("and a parser for it", "function tokenFromPaste(" in source, True)
+
+    parser = source[source.index("function tokenFromPaste("):
+                    source.index("function tokenBox(")]
+    check("it pulls the token out of a URL fragment",
+          "token=" in parser, True)
+    check("it also accepts a bare token", "A-Za-z0-9_-" in parser, True)
+
+    box = source[source.index("function tokenBox("):]
+    box = box[:box.index("\nconst VIEWS") if "\nconst VIEWS" in box else 4000]
+    check("a rejected paste is forgotten too", "forgetToken()" in box, True)
+    check("Enter submits", "'Enter'" in box, True)
+
+
 def test_render_survives_a_missing_config() -> None:
     """Nothing can be drawn before /api/config answers.
 
@@ -596,13 +643,14 @@ def test_render_survives_a_missing_config() -> None:
     check("bootstrap renders either way", boot.count("render()") >= 1, True)
     check("state declares the field", "configError:" in source, True)
 
-    gate = source[source.index("function configGate()"):source.index("const VIEWS = {")]
+    # The gate ends where the paste box begins; the box is asserted separately.
+    gate = source[source.index("function configGate()"):
+                  source.index("function tokenBox(")]
     # Phrases are checked in a form that survives string concatenation: the
     # source wraps mid-sentence, so "after the #" is split across two literals.
     flat = re.sub(r"'\s*\+\s*'", "", gate)
     for phrase in ("old session token", "after the #", "bash run.sh",
-                   "Try again", "projects are files on disk",
-                   "stable across restarts"):
+                   "projects are files on disk", "stable across restarts"):
         check(f"the gate explains {phrase!r}", phrase in flat, True)
 
 

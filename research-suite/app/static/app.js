@@ -26,10 +26,7 @@ const state = {
 function takeToken() {
   const match = /(?:^|[#&])token=([^&]+)/.exec(location.hash || '');
   if (match) {
-    state.token = decodeURIComponent(match[1]);
-    try {
-      sessionStorage.setItem('research_token', state.token);
-    } catch (error) { /* private browsing — memory only, which still works */ }
+    setToken(decodeURIComponent(match[1]));
     history.replaceState(null, '', location.pathname);
     return;
   }
@@ -38,6 +35,37 @@ function takeToken() {
   } catch (error) {
     state.token = '';
   }
+}
+
+function setToken(value) {
+  state.token = (value || '').trim();
+  try {
+    if (state.token) sessionStorage.setItem('research_token', state.token);
+    else sessionStorage.removeItem('research_token');
+  } catch (error) { /* private browsing — memory only, which still works */ }
+}
+
+/* A rejected token has to be forgotten, not remembered.
+
+   takeToken stores whatever arrives in the fragment and then strips the
+   fragment from the address bar. So pasting one stale URL was permanent: the
+   bad token went into sessionStorage, every reload read it back, and "Try
+   again" resent it. There was no way out from inside the page — the only
+   escape was pasting a *different* URL, which is exactly what someone stuck in
+   this state does not have. */
+
+function forgetToken() {
+  setToken('');
+}
+
+/* Accepts the whole launch URL or the bare token, because at this point the
+   user is copying out of a terminal and either is a reasonable thing to grab. */
+
+function tokenFromPaste(text) {
+  const value = (text || '').trim();
+  const match = /(?:[#&?]token=)([^&\s]+)/.exec(value);
+  if (match) return decodeURIComponent(match[1]);
+  return /^[A-Za-z0-9_-]{16,}$/.test(value) ? value : '';
 }
 
 async function api(path, options = {}) {
@@ -229,14 +257,45 @@ function configGate() {
           + 'is not running. Start it with bash run.sh and leave it running.'))
       : el('p', { class: 'hint' }, 'The server may have stopped. Start it with '
         + 'bash run.sh, then reload from the URL it prints.'),
-    el('button', {
-      class: 'button',
-      onclick: () => guard(async () => {
-        state.config = await api('/api/config');
-        state.configError = '';
-        render();
-      }),
-    }, 'Try again'));
+    tokenBox());
+}
+
+function tokenBox() {
+  const input = el('input', {
+    type: 'text',
+    placeholder: 'Paste the whole Open: URL, or just the token',
+  });
+  const status = el('div', {});
+
+  const attempt = () => guard(async () => {
+    const token = tokenFromPaste(input.value);
+    if (!token) {
+      status.replaceChildren(notice('That does not look like a token. Copy the '
+        + 'whole Open: line from the terminal — the token is the part after '
+        + 'the #.', 'warn'));
+      return;
+    }
+    setToken(token);
+    try {
+      state.config = await api('/api/config');
+      state.configError = '';
+      render();
+    } catch (error) {
+      forgetToken();
+      status.replaceChildren(notice(`${error.message} — that token was not `
+        + 'accepted either. Check the terminal is showing a current banner.',
+        'bad'));
+    }
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') attempt();
+  });
+
+  return el('div', { class: 'stack' },
+    field('Token', input),
+    el('button', { class: 'button', onclick: attempt }, 'Use this token'),
+    status);
 }
 
 const VIEWS = {
@@ -1777,6 +1836,8 @@ takeToken();
     for (const warning of state.config.warnings) toast(warning, true);
   } catch (error) {
     state.configError = error.message || String(error);
+    // A token the server refused must not be replayed on the next reload.
+    if (/token/i.test(state.configError)) forgetToken();
   }
   render();
 })();
