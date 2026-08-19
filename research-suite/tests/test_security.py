@@ -286,6 +286,25 @@ def test_security_imports_without_fastapi() -> None:
               f"import {heavy}" in doctor, False)
 
 
+def test_the_doctor_only_suggests_tools_that_exist() -> None:
+    """Advice that ends in "command not found" costs a round trip.
+
+    The remedy for an unforwarded port recommended `gh codespace ports
+    forward`. Codespaces images do not all ship the GitHub CLI, and the user's
+    did not — so the one actionable line in the diagnosis was a dead end.
+    """
+    doctor = (Path(__file__).resolve().parents[1] / "app" / "doctor.py").read_text("utf-8")
+    block = doctor[doctor.index("Port {port} is NOT forwarded") - 900:
+                   doctor.index("# 6. The URL to actually open.")]
+    check("the gh suggestion is guarded on it being installed",
+          'shutil.which("gh")' in block, True)
+    check("the PORTS panel is named", "PORTS panel" in block, True)
+    check("a rebuild is offered when there is no panel",
+          "Rebuild Container" in block, True)
+    check("visibility guidance travels with it",
+          "Private" in block, True)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):

@@ -160,12 +160,24 @@ def main() -> int:
                      "Anyone with the URL can reach this and the session token "
                      "is the only protection. Set it back to private.")
         else:
+            # The remedy names the PORTS panel first and only mentions the
+            # CLI when it is actually installed. Codespaces images do not all
+            # ship `gh`, and advice that ends in "command not found" is worse
+            # than no advice — it costs a round trip and reads as a dead end.
+            cli = (f"\n         Or, in a second terminal: gh codespace ports "
+                   f"forward {port}:{port}" if shutil.which("gh") else "")
             line(BAD, f"Port {port} is NOT forwarded — this is your 404.",
                  "Nothing is wrong with the application. GitHub's proxy has no "
-                 "route to it.\n         Fix: open the PORTS panel in VS Code, "
-                 "click 'Forward a Port', enter " + str(port) + ".\n"
-                 "         Or in another terminal: gh codespace ports forward "
-                 f"{port}:{port}")
+                 "route to it.\n"
+                 "         Fix: open the PORTS panel in VS Code (bottom panel, "
+                 "beside TERMINAL),\n"
+                 "         click 'Forward a Port', enter " + str(port) + ", and "
+                 "leave visibility Private." + cli + "\n"
+                 "         If there is no PORTS panel, rebuild the container "
+                 "instead: Ctrl+Shift+P →\n"
+                 "         'Codespaces: Rebuild Container'. The devcontainer "
+                 "declares this port, so a\n         rebuild forwards it "
+                 "permanently.")
 
     # 6. The URL to actually open.
     print()
