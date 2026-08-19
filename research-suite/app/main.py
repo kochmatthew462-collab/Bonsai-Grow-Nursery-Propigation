@@ -31,6 +31,7 @@ from .charting import routes as charting_routes, store as charting_store
 from .compliance import journals as journals_module, rubric as rubric_module, \
     simulator as simulator_module
 from .research import pico as pico_module
+from .apa import citations as citations_module
 from .apa.citations import CitationContext
 from .apa.document import ApaPaper, APPROVED_FONTS, default_running_head
 from .evidence import appraisal as appraisal_module, dedupe, levels
@@ -1107,6 +1108,154 @@ async def journal_check(project_id: str,
         title=str(getattr(title_page, "title", "") or "") if title_page else "",
         keywords=list(getattr(project, "keywords", None) or []),
     )
+
+
+# --------------------------------------------------------------------- APA 7
+
+
+# Every rule the document builder actually enforces, each with the section of
+# the Publication Manual it comes from. Kept here rather than in the front end
+# because it is a claim about what the code does, and it should be edited in the
+# same commit as the code that would falsify it.
+APA_RULES = [
+    ("Margins", "1 inch on all four sides", "§2.22", "layout"),
+    ("Line spacing", "Double throughout — body, block quotations, table notes "
+     "and the reference list alike", "§2.21", "layout"),
+    ("Paragraph indent", "0.5 inch first line, no extra space between "
+     "paragraphs", "§2.24", "layout"),
+    ("Page numbers", "Flush right in the header of every page, title page "
+     "included, as a field rather than typed digits", "§2.18", "layout"),
+    ("Running head", "Professional papers only, in capitals, 50 characters "
+     "maximum including spaces", "§2.8", "layout"),
+    ("Typeface", "Times New Roman 12, Calibri 11, Arial 11, Georgia 11, "
+     "Lucida Sans Unicode 10 or Computer Modern 10", "§2.19", "layout"),
+    ("Title page", "Student and professional variants differ: a student page "
+     "carries course, instructor and due date; a professional page carries an "
+     "author note and running head", "§2.3", "front matter"),
+    ("Abstract", "Own page, label centred and bold, text not indented",
+     "§2.9", "front matter"),
+    ("Keywords", "Indented, the label italic, on the line below the abstract",
+     "§2.10", "front matter"),
+    ("Headings", "Five levels, each formatted distinctly; levels 4 and 5 run "
+     "into the paragraph", "§2.27", "structure"),
+    ("Block quotations", "40 words or more, indented 0.5 inch, no quotation "
+     "marks", "§8.27", "quotations"),
+    ("Quotation punctuation", "The period follows the citation, not the "
+     "closing quotation mark", "§8.27", "quotations"),
+    ("In-text citations", "et al. from the first citation for three or more "
+     "authors; expanded to as many surnames as it takes when two works would "
+     "shorten identically", "§8.17, §8.18", "citations"),
+    ("Year letters", "2020a, 2020b only for identical author lists, lettered "
+     "by the title order of the reference list", "§8.19", "citations"),
+    ("Group authors", "Spelled out on first use with the abbreviation, "
+     "abbreviated after", "§8.21", "citations"),
+    ("Reference list", "New page, hanging indent of 0.5 inch, alphabetical by "
+     "author then year then title", "§2.12, §9.43", "references"),
+    ("Reference authors", "Up to 20 listed; 21 or more use the first 19, an "
+     "ellipsis, and the final author", "§9.8", "references"),
+    ("Title case", "Sentence case for article and book titles, title case for "
+     "journal names, with proper nouns and terms like COVID-19 preserved",
+     "§6.17, §9.19", "references"),
+    ("DOIs", "Presented as https://doi.org/ links, without the label 'doi:'",
+     "§9.35", "references"),
+    ("Tables", "Number and italic title above, horizontal rules only, note "
+     "beneath with an italic label", "§7.8, §7.14", "tables and figures"),
+    ("Figures", "Number and italic title above, image, then a note beneath; "
+     "the underlying values also given as a table", "§7.22", "tables and figures"),
+    ("Appendices", "Labelled and titled, each starting a new page", "§2.14",
+     "structure"),
+]
+
+
+@app.get("/api/projects/{project_id}/apa")
+async def apa_report(project_id: str) -> dict[str, Any]:
+    """What APA 7 conformance this paper currently has, with live previews.
+
+    The formatting is the point of this application and it was the least
+    visible thing in it — implemented across four thousand lines, cited to the
+    manual section by section, and surfaced only as a .docx at the very end.
+    This endpoint puts it on screen: the rules, the current setup, and the
+    citations and references *this* project will actually produce.
+    """
+    project = _load(project_id)
+    page = project.title_page
+    cited = project.cited_works()
+    context = CitationContext(cited, _group_abbreviations(project))
+    font = project.font or SETTINGS.default_font or "Times New Roman"
+
+    previews = []
+    for work in cited[:12]:
+        first = CitationContext(cited, _group_abbreviations(project))
+        previews.append({
+            "key": work.key,
+            "label": work.short_label(),
+            "parenthetical": citations_module.plain(
+                citations_module.intext([work], first)),
+            "narrative": citations_module.preview_author(work, first,
+                                                         narrative=True),
+            "reference": citations_module.plain(
+                citations_module.reference(work, context)),
+        })
+
+    variant = page.variant or "student"
+    setup = [
+        ("Paper type", "Professional" if variant == "professional" else "Student",
+         "§2.3"),
+        ("Typeface", f"{font} {APPROVED_FONTS.get(font, 12):g} pt", "§2.19"),
+        ("Margins", "1 inch, all sides", "§2.22"),
+        ("Line spacing", "Double", "§2.21"),
+        ("Page numbers", "Header, flush right, from the title page", "§2.18"),
+        ("Running head",
+         (page.running_head or default_running_head(page.title or project.topic))
+         if variant == "professional" else "Not used on a student paper", "§2.8"),
+    ]
+
+    # Things APA requires that this project has not supplied yet. Stated as
+    # what is missing rather than as a score, because a percentage would invite
+    # treating 90% as good enough when the missing 10% is the title.
+    outstanding = []
+    if not (page.title or "").strip():
+        outstanding.append("The title page has no title (§2.4).")
+    if not page.authors:
+        outstanding.append("No author is named on the title page (§2.5).")
+    if variant == "student" and not (page.course or "").strip():
+        outstanding.append("A student title page names the course (§2.3).")
+    if variant == "student" and not (page.instructor or "").strip():
+        outstanding.append("A student title page names the instructor (§2.3).")
+    if variant == "professional" and len(
+            page.running_head or default_running_head(page.title or "")) > 50:
+        outstanding.append("The running head is over 50 characters (§2.8).")
+    if not (project.abstract or "").strip():
+        outstanding.append("No abstract has been written (§2.9). Optional for "
+                           "many course papers — check your rubric.")
+    if not cited:
+        outstanding.append("No source is cited yet, so the reference list "
+                           "would be empty (§2.12).")
+
+    return {
+        "rules": [{"rule": r, "detail": d, "section": s, "group": g}
+                  for r, d, s, g in APA_RULES],
+        "setup": [{"name": n, "value": v, "section": s} for n, v, s in setup],
+        "previews": previews,
+        "outstanding": outstanding,
+        "headings": [
+            {"level": 1, "format": "Centred, bold, title case", "section": "§2.27"},
+            {"level": 2, "format": "Flush left, bold, title case", "section": "§2.27"},
+            {"level": 3, "format": "Flush left, bold italic, title case",
+             "section": "§2.27"},
+            {"level": 4, "format": "Indented, bold, title case, ends with a "
+             "period, text runs on", "section": "§2.27"},
+            {"level": 5, "format": "Indented, bold italic, title case, ends "
+             "with a period, text runs on", "section": "§2.27"},
+        ],
+        "fonts": sorted(APPROVED_FONTS),
+        "note": (
+            "Every rule above is enforced by the exporter, not by advice — the "
+            "margins, the double spacing, the hanging indent and the page-number "
+            "field are written into the .docx itself, and tests assert them "
+            "against the saved file rather than against the builder."
+        ),
+    }
 
 
 # ----------------------------------------------------------------- full text

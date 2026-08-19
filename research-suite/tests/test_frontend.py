@@ -493,6 +493,29 @@ def test_project_dependent_views_are_declared() -> None:
         check(f"{view!r} is a real view", view in mapped, True)
 
 
+def test_apa_is_a_first_class_screen() -> None:
+    """The formatting is the point of this tool and it had no screen.
+
+    Four thousand lines across app/apa/, every rule cited to the manual, and
+    the only place any of it surfaced was a .docx at the end of an eight-step
+    workflow whose first screen is PICO(T). The user asked, reasonably, why
+    there was nothing about APA 7 in an APA 7 tool.
+    """
+    html = (STATIC / "index.html").read_text("utf-8")
+    check("APA has its own nav button", 'data-view="apa"' in html, True)
+
+    source = _source("app.js")
+    check("and its own view", "function viewApa(" in source, True)
+    check("routed", re.search(r"^\s*apa:\s*viewApa,", source, re.MULTILINE)
+          is not None, True)
+
+    body = source[source.index("function viewApa("):
+                  source.index("function headingExample(")]
+    check("it reads the live report", "/apa" in body, True)
+    for section in ("setup", "outstanding", "previews", "headings", "rules"):
+        check(f"it shows {section}", section in body, True)
+
+
 def test_the_nav_bars_are_never_hidden_wholesale() -> None:
     """Hiding the whole bar takes the always-available screens with it.
 

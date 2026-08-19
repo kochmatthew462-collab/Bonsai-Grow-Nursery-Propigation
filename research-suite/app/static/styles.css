@@ -608,3 +608,21 @@ label.tight input { font-size: 0.85rem; }
   .repeat-row { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
   .repeat-row > input { flex: 1 1 8rem; min-width: 0; }
 }
+
+/* The heading-level examples on the APA screen, shown in the formatting the
+ * exporter actually applies — a table that only described them in words would
+ * be asking the reader to imagine the thing the tool exists to produce. */
+.apa-h1 { display: block; text-align: center; font-weight: 700; }
+.apa-h2 { display: block; font-weight: 700; }
+.apa-h3 { display: block; font-weight: 700; font-style: italic; }
+.apa-h4 { display: block; padding-left: 1.2rem; font-weight: 700; }
+.apa-h5 { display: block; padding-left: 1.2rem; font-weight: 700; font-style: italic; }
+
+/* A reference entry, with the hanging indent APA 7 §2.12 requires. */
+.reference-entry {
+  display: block;
+  padding-left: 1.6rem;
+  text-indent: -1.6rem;
+  max-width: 60ch;
+  line-height: 1.5;
+}
