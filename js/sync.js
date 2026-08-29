@@ -206,6 +206,29 @@
     });
   }
 
+  /* ---------------------------------------------------------- live sensors */
+
+  /**
+   * The Raspberry Pi cabinet monitor writes a small companion document,
+   * nurseries/<code>-live, with current readings. Same credentials, same
+   * rules; returns null when sync is off or no Pi has ever written it.
+   */
+  function fetchLive() {
+    if (!isConfigured()) return Promise.resolve(null);
+    return getToken().then(function (token) {
+      return global.fetch(documentUrl() + '-live', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+    }).then(function (response) {
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error('Live read failed (HTTP ' + response.status + ')');
+      return response.json().then(function (payload) {
+        var raw = payload.fields && payload.fields.data && payload.fields.data.stringValue;
+        return raw ? JSON.parse(raw) : null;
+      });
+    });
+  }
+
   /* ------------------------------------------------------------ the cycle */
 
   /**
@@ -289,6 +312,7 @@
     status: status,
     onStatus: onStatus,
     syncNow: syncNow,
+    fetchLive: fetchLive,
     start: start
   };
 })(window);

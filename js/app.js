@@ -161,6 +161,9 @@
       })
     ]));
 
+    var live = liveSensorsCard(null);
+    if (live) view.appendChild(live);
+
     if (plants.length) {
       var body = h('tbody');
       plants.forEach(function (plant) {
@@ -347,6 +350,8 @@
     if (tasks) view.appendChild(tasks);
     var forecastCard = plantWeatherCard(plant, profile);
     if (forecastCard) view.appendChild(forecastCard);
+    var plantLive = liveSensorsCard(plant.id);
+    if (plantLive) view.appendChild(plantLive);
     view.appendChild(kpiRow(plant, profile, latest));
     var drip = dripCard(plant, profile);
     if (drip) view.appendChild(drip);
@@ -905,7 +910,10 @@
         }));
       });
       cells.push(h('td', { text: care.join(', ') || '—' }));
-      cells.push(h('td', { text: entry.note || '' }));
+      cells.push(h('td', {
+        text: entry.note ||
+          (entry.auto === 'sensor' ? 'sensor summary' : '')
+      }));
       cells.push(h('td', { class: 'no-print' }, [
         h('button', {
           class: 'button button-quiet button-danger', text: 'Delete',
@@ -1623,6 +1631,102 @@
       status,
       h('p', { class: 'hint', text: meter })
     ]);
+  }
+
+  /* --------------------------------------------------------- live sensors */
+
+  function liveAge(live) {
+    if (!live || !live.at) return null;
+    return Math.round((Date.now() - Date.parse(live.at)) / 60000);
+  }
+
+  // Older than three misses of the Pi's five-minute heartbeat = stale. A
+  // stale reading shown as current is worse than no reading at all.
+  var LIVE_STALE_MINUTES = 15;
+
+  function liveFact(key, value) {
+    return h('div', { class: 'month-fact' }, [
+      h('span', { class: 'k', text: key }),
+      h('span', { class: 'v', text: value })
+    ]);
+  }
+
+  /**
+   * Current cabinet readings from the Pi's live document. Rendered only when
+   * sync is configured; fills itself in asynchronously. `plantId` narrows the
+   * card to one plant's moisture (for the plant page).
+   */
+  function liveSensorsCard(plantId) {
+    if (!sync.isConfigured()) return null;
+    var body = h('div', {}, [h('p', { class: 'hint', text: 'Checking for the cabinet monitor…' })]);
+    var head = h('div', { class: 'card-head' }, [h('h2', { text: 'Live sensors' })]);
+    var card = h('div', { class: 'card' }, [head, body]);
+
+    sync.fetchLive().then(function (live) {
+      body.textContent = '';
+      if (!live) {
+        // No Pi has ever written the live document — hide the card entirely
+        // rather than nagging nurseries that have no cabinet monitor.
+        card.hidden = true;
+        return;
+      }
+      var age = liveAge(live);
+      var stale = age == null || age > LIVE_STALE_MINUTES;
+      head.appendChild(statusChip(stale
+        ? { level: 'bad', label: age == null ? 'no timestamp' : 'stale — last seen ' + age + ' min ago' }
+        : { level: 'good', label: 'live · ' + age + ' min ago' }));
+      if (stale) {
+        body.appendChild(h('p', {
+          class: 'hint',
+          text: 'The Pi has not reported for over ' + LIVE_STALE_MINUTES + ' minutes. ' +
+            'Check power, Wi-Fi, and `journalctl -u plantmon` on the Pi.'
+        }));
+      }
+
+      var facts = h('div', { class: 'month-facts' });
+      var air = live.air || {};
+      if (air.tempF != null) facts.appendChild(liveFact('Air', charts.trimNumber(air.tempF, 1) + ' °F'));
+      if (air.rh != null) facts.appendChild(liveFact('Humidity', charts.trimNumber(air.rh, 0) + ' %'));
+      if (air.lux != null) facts.appendChild(liveFact('Light', air.lux + ' lux'));
+      if (air.pressureHpa != null) facts.appendChild(liveFact('Pressure', charts.trimNumber(air.pressureHpa, 0) + ' hPa'));
+
+      var moisture = live.moisture || {};
+      Object.keys(moisture).forEach(function (id) {
+        if (plantId && id !== plantId) return;
+        var plant = store.getPlant(id);
+        facts.appendChild(liveFact((plant ? plant.name : id) + ' moisture',
+          charts.trimNumber(moisture[id], 0) + ' %'));
+      });
+
+      var chill = live.chill || {};
+      Object.keys(chill).forEach(function (id) {
+        if (plantId && id !== plantId) return;
+        var plant = store.getPlant(id);
+        facts.appendChild(liveFact((plant ? plant.name : id) + ' chill',
+          chill[id] + ' h'));
+      });
+
+      var relays = live.relays || {};
+      Object.keys(relays).forEach(function (name) {
+        facts.appendChild(liveFact(name, relays[name] ? 'ON' : 'off'));
+      });
+
+      if (!facts.childNodes.length) {
+        body.appendChild(h('p', { class: 'hint', text: 'The Pi reported, but with no readings yet.' }));
+      } else {
+        body.appendChild(facts);
+      }
+      body.appendChild(h('p', {
+        class: 'hint',
+        text: 'Read every minute on the Pi; this card refreshes each time the page renders. ' +
+          'Daily summaries land in each plant’s history automatically as sensor entries.'
+      }));
+    }).catch(function (error) {
+      body.textContent = '';
+      body.appendChild(h('p', { class: 'hint', text: 'Live readings unavailable: ' + error.message }));
+    });
+
+    return card;
   }
 
   /* -------------------------------------------------------------- weather */
