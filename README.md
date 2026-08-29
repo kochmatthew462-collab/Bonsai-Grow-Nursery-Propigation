@@ -347,6 +347,44 @@ would end the "free, no accounts" property this whole thing is built on.
 
 ---
 
+## The Raspberry Pi cabinet monitor
+
+The one thing a static page honestly cannot do is poll a sensor at 3 a.m. The
+`pi/` folder closes that gap: a small daemon for a **Raspberry Pi 3B+** wearing
+a Waveshare **Sense HAT (B)** (air temp, RH, pressure, light) with up to five
+**capacitive moisture probes** on external ADS1115 ADCs — the exact parts list
+in `pi/README.md`, with wiring, addresses and calibration.
+
+The design decision that makes it fit everything above: **the Pi is just one
+more device on the nursery.** It uses the same three credentials as the app's
+Sync page and the same merge rules (ported to Python and proven byte-identical
+against the real `js/store.js` in `pi/test_pi.py`), so nothing about sync,
+backup or the document-size budget changes.
+
+- **Raw readings every minute** stay in SQLite on the Pi, forever, never
+  uploaded — the logger the olive handbook wished for.
+- **A live document every 5 minutes** feeds the app's **Live sensors** card:
+  current air, per-plant moisture, chill count, relay states. If the Pi goes
+  quiet for 15 minutes the card says **stale**, loudly — a dead logger that
+  looks alive is the worst failure a winter record can have.
+- **One minimal summary entry per plant per day** (~150 bytes: true
+  `tempLow`/`tempHigh`, median humidity, day-max light, latest moisture,
+  cumulative chill hours) merges into the shared document under a
+  deterministic id, exactly like the drip log — so it updates in place all
+  day and coexists with hand-typed checks instead of fighting them. A year of
+  summaries for six plants is ~250 KB of the 1 MiB ceiling.
+- **Chill hours become measured, not guessed**: hourly means below 45 °F,
+  Nov 1 – Mar 1, from the raw record, landing on the olive's daily entry.
+- The relay shield can schedule the **USB fan and humidifier** — low-voltage
+  loads only, every relay disabled by default, and the grow lights and drip
+  pump stay on their own timers. `pi/README.md` spells out why.
+
+Install is one script plus a config file (`pi/install.sh`, systemd service
+included). The app needs nothing enabled — the Live sensors card appears by
+itself once a Pi has written the live document, and hides when none ever has.
+
+---
+
 ## Audit against a professional metric-tracking checklist
 
 The tracker was audited against an eight-part professional nursery checklist.
@@ -366,7 +404,7 @@ Status of every item, including what was deliberately not built and why:
 | | 3D models | ✖ far beyond a static page's budget; the photo timeline is the record |
 | | Wiring log + removal watch | ✅ wired/gauge/removed on any check; a "wire on N d — inspect" chip appears after 14 days |
 | | Repot detail + cycle | ✅ mix, pot, root-prune % logged; last-repot date shown; the repot windows and cycles were already in the calendar |
-| **3 · Irrigation & hydration** | Sensor integration | ✖ honest limit — a static page cannot poll a soil sensor; moisture is manual + the drip log is derived |
+| **3 · Irrigation & hydration** | Sensor integration | ✅ with the Raspberry Pi cabinet monitor (see below) — five calibrated capacitive probes log continuously; without the Pi, moisture is manual + the drip log is derived |
 | | Substrate properties | ✅ percolation test (the book's 5 s pass / 15 s fail) joins pH and EC |
 | | Water quality | ✅ thresholds live in the bergamot watch list (alkalinity < 100 ppm etc.); readings go in pH/EC/notes |
 | | Schedule triggers | ✅ the seasonal drip programme already drives the derived log |
@@ -381,7 +419,7 @@ Status of every item, including what was deliberately not built and why:
 | | Treatments + REI | ✅ agent, dose in notes, REI hours — with a live "REI until…" chip while re-entry is barred |
 | | Quarantine | ✅ new-stock checkbox sets 4 weeks; chip on the plant and the nursery list until it clears |
 | | Seasonal protection | ✅ was already the weather watch + winter floor + move logs |
-| **7 · Environment** | Sensor logs | ✖ same honest limit as irrigation sensors |
+| **7 · Environment** | Sensor logs | ✅ with the Pi — continuous air temp/RH/pressure/light, true daily low/high, and a real chill-hour count from the raw record |
 | | VPD | ✖ needs continuously paired temp+RH; deriving it from one daily reading would mislead |
 | | PAR / DLI | ✅ derived on the light tile: PPFD via the book's ÷70 LED rule, DLI from the bench photoperiod (outdoors, instantaneous PPFD only — one midday reading is not a daily integral) |
 | | Push alerts | ✅ within the no-server limit already documented: weather alerts while open, `.ics` for background reminders |
@@ -465,6 +503,8 @@ js/charts.js        SVG charts, hover and keyboard readout, table views
 js/calendar.js      dated task windows, the derived drip log, .ics export
 js/weather.js       forecast fetch and the move alerts it drives
 js/app.js           routing and views
+pi/                 the Raspberry Pi cabinet monitor: daemon, drivers,
+                    install script, wiring guide, its own test suite
 test/               verification, described below
 ```
 
@@ -493,6 +533,8 @@ python3 test/sync_test.py     # two devices converging through sync
 python3 test/calendar_test.py # the calendar and the derived drip log
 python3 test/weather_test.py  # move alerts and the calendar export
 python3 test/pro_test.py      # specimen record, lineage, IPM, photos, derived chips
+python3 test/sensors_test.py  # the Live sensors card and sensor-entry flow
+python3 pi/test_pi.py         # the Pi daemon: summaries, chill, merge equivalence
 ```
 
 `verify_qr.py` checks 138 matrices three ways: every one decodes back to its
@@ -543,5 +585,19 @@ olive but a threat for the citrus, that the two trees do **not** move on the sam
 night, and that one cold night in spring holds a tree indoors. The forecast fetch
 runs against a mock of the Open-Meteo endpoint served from the app's own origin,
 so it needs no network and no key.
+
+`sensors_test.py` proves the app's side of the Pi integration against a mocked
+Firestore live document: the Live sensors card hides when no Pi has ever
+reported, renders a fresh reading with moisture named by plant, calls a
+45-minute-old reading **stale** and says what to check, and a minimal sensor
+entry — carrying only the keys it measured — flows through the same tiles,
+history, CSV and merge as a hand-typed check without displacing one.
+
+`pi/test_pi.py` needs no hardware: it feeds synthetic readings through the real
+summarisation and checks the chill count (including a season that spans New
+Year), deterministic ids, idempotent re-summaries, entry sizes against the
+document budget, probe calibration clamping, and — via node against the real
+`js/store.js` — that the Python merge and the JavaScript merge produce
+byte-identical output, tombstones included.
 
 Add `--screenshots DIR` to `smoke_app.py` to capture the pages.

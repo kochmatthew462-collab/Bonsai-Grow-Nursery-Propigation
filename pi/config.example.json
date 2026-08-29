@@ -1,0 +1,54 @@
+{
+  "_comment_credentials": "Same three values the app's Sync page uses. The Pi is just another device on the nursery.",
+  "projectId": "your-firebase-project-id",
+  "apiKey": "AIza...",
+  "code": "your-nursery-code",
+
+  "_comment_intervals": "Seconds. Poll every minute, refresh the live card every 5, merge daily summaries every 30.",
+  "poll_seconds": 60,
+  "live_interval_seconds": 300,
+  "push_interval_seconds": 1800,
+  "db_path": "/home/pi/plantmon/plantmon.db",
+
+  "_comment_air": "Plant ids (from each plant page, e.g. k3m9x2) that receive the cabinet's daily air/light summary. Usually ONE designated plant, so the document stays small - every bench tree sees the same air anyway.",
+  "air_plant_ids": ["REPLACE-bench-plant-id"],
+
+  "_comment_chill": "The olive's plant id. Its winter chill hours (below 45 F, counted hourly from the raw log, Nov 1 - Mar 1) land on its daily entry.",
+  "chill_plant_id": "REPLACE-olive-plant-id",
+
+  "_comment_moisture": "One block per capacitive probe. addr: 0x49/0x4a/0x4b as strapped (0x48 stays for the HAT's own ADC). channel: 0-3 on that board. dry/wet: raw counts from the calibration pass - probe dry in air, then submerged to the line.",
+  "moisture": [
+    { "plantId": "REPLACE-plant-1", "addr": 73, "channel": 0, "dry": 26000, "wet": 11000 },
+    { "plantId": "REPLACE-plant-2", "addr": 73, "channel": 1, "dry": 26000, "wet": 11000 },
+    { "plantId": "REPLACE-plant-3", "addr": 73, "channel": 2, "dry": 26000, "wet": 11000 },
+    { "plantId": "REPLACE-plant-4", "addr": 73, "channel": 3, "dry": 26000, "wet": 11000 },
+    { "plantId": "REPLACE-plant-5", "addr": 74, "channel": 0, "dry": 26000, "wet": 11000 }
+  ],
+
+  "_comment_relays": "LOW-VOLTAGE LOADS ONLY (USB fan, humidifier DC side). All disabled until you enable them deliberately. Pins are BCM numbers. Sessions are local HH:MM with optional months (1-12); the winter humidifier sessions below are the bench packet's own table.",
+  "relays": [
+    {
+      "name": "humidifier",
+      "enabled": false,
+      "pin": 5,
+      "active_low": true,
+      "sessions": [
+        { "from": "07:00", "to": "08:00", "months": [11, 12, 1, 2, 3] },
+        { "from": "12:00", "to": "13:00", "months": [11, 12, 1, 2, 3] },
+        { "from": "16:30", "to": "17:15", "months": [11, 12, 1, 2, 3] },
+        { "from": "06:30", "to": "07:15", "months": [4, 5, 9, 10] },
+        { "from": "13:00", "to": "13:45", "months": [4, 5, 9, 10] },
+        { "from": "06:00", "to": "06:30", "months": [6, 7, 8] }
+      ]
+    },
+    {
+      "name": "fan",
+      "enabled": false,
+      "pin": 6,
+      "active_low": true,
+      "sessions": [
+        { "from": "06:00", "to": "22:00" }
+      ]
+    }
+  ]
+}

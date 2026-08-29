@@ -1,0 +1,15 @@
+[Unit]
+Description=Koch's Tree Nursery cabinet monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/plantmon
+ExecStart=/usr/bin/python3 /home/pi/plantmon/sensord.py --config /home/pi/plantmon/config.json
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
