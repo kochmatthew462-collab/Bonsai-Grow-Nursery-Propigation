@@ -79,11 +79,15 @@ example humidifier sessions are the bench packet's own seasonal table.
 ```bash
 # on the Pi, in this folder (clone the repo or copy pi/ over)
 bash install.sh
-nano /home/pi/plantmon/config.json     # credentials, plant ids, calibration
-python3 /home/pi/plantmon/sensord.py --config /home/pi/plantmon/config.json --once --no-cloud
+nano ~/plantmon/config.json     # credentials, plant ids, calibration
+python3 ~/plantmon/sensord.py --config ~/plantmon/config.json --once --no-cloud
 sudo systemctl start plantmon
 journalctl -u plantmon -f
 ```
+
+The install works for any user account (it writes the service for whoever
+runs it), and on Raspberry Pi OS Bookworm and later the Python dependencies
+come from apt, since those releases refuse system-wide pip installs.
 
 `config.json` needs:
 
