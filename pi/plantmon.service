@@ -1,3 +1,5 @@
+# Template unit — install.sh rewrites User= and the /home/pi paths for
+# whichever account runs it before copying this into /etc/systemd/system.
 [Unit]
 Description=Koch's Tree Nursery cabinet monitor
 After=network-online.target
