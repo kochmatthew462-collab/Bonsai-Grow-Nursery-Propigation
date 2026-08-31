@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radiology Interpretation Academy</title>
+  <meta name="description" content="Self-study web app for learning radiologic image interpretation — modalities, systematic approaches, radiologic anatomy (adult & pediatric), a personal study library with viewer, signs, measurements, quizzes, and spaced-repetition flashcards.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩻</text></svg>">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><a href="#/">🩻 <span>Radiology<br>Interpretation<br>Academy</span></a></div>
+      <nav class="nav">
+        <a href="#/" data-nav="home">🏠 Dashboard</a>
+        <a href="#/learn" data-nav="learn">📚 Modalities</a>
+        <a href="#/approach" data-nav="approach">🧭 Approaches</a>
+        <a href="#/anatomy" data-nav="anatomy">🗺️ Anatomy</a>
+        <a href="#/library" data-nav="library">📁 Study Library</a>
+        <a href="#/flashcards" data-nav="flashcards">🃏 Flashcards</a>
+        <a href="#/quiz" data-nav="quiz">❓ Quizzes</a>
+        <a href="#/signs" data-nav="signs">💡 Classic Signs</a>
+        <a href="#/measurements" data-nav="measurements">📏 Measurements</a>
+        <a href="#/about" data-nav="about">ℹ️ About</a>
+      </nav>
+      <div class="sidebar-foot">Education only — not medical advice.<br>All data stays in your browser.</div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <button id="burger" class="burger" aria-label="Toggle navigation">☰</button>
+        <form id="nav-search-form" class="topbar-search">
+          <input id="nav-search" type="search" placeholder="Search curriculum, signs, measurements…" aria-label="Search">
+        </form>
+      </header>
+      <main id="main" class="main" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- DICOM parsing (optional; the app works without it for PNG/JPEG). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dicom-parser/1.8.21/dicomParser.min.js" crossorigin="anonymous"></script>
+
+  <!-- Content data -->
+  <script src="js/data/modalities.js"></script>
+  <script src="js/data/approaches.js"></script>
+  <script src="js/data/anatomy.js"></script>
+  <script src="js/data/signs.js"></script>
+  <script src="js/data/measurements.js"></script>
+  <script src="js/data/flashcards.js"></script>
+  <script src="js/data/quizzes.js"></script>
+
+  <!-- App -->
+  <script src="js/ui.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/srs.js"></script>
+  <script src="js/viewer.js"></script>
+  <script src="js/library.js"></script>
+  <script src="js/quiz.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
