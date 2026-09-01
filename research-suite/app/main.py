@@ -145,8 +145,35 @@ HEALTH_MARKER = "koch-clinical-suite"
 
 
 @app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok", "app": HEALTH_MARKER}
+async def healthz(request: Request) -> dict[str, Any]:
+    """Alive, and — to a caller on this machine — how this run is configured.
+
+    A second `bash run.sh` finds this run and prints where to open it. It used
+    to describe *itself* while doing so: its own bind address and its own
+    allowlist, read from the environment variables of the invocation that was
+    about to exit. Start a run bound to loopback, then run it again with
+    RESEARCH_SUITE_HOST=0.0.0.0 and a LAN name, and it cheerfully printed a LAN
+    URL for a server that answers only on 127.0.0.1. The browser then said
+    ERR_CONNECTION_REFUSED, which reads like the feature does not work.
+
+    So the running process answers for itself. The extra detail goes only to a
+    loopback caller: bound wide, anything on the network can reach this path,
+    and the allowlisted names are exactly what a rebinding attempt would like
+    to know. The token is never here at all — this route needs no token, and
+    that is the whole reason it must not carry one.
+    """
+    payload: dict[str, Any] = {"status": "ok", "app": HEALTH_MARKER}
+    client = request.client.host if request.client else ""
+    if security.is_loopback_client(client):
+        payload["bind"] = {
+            "host": SETTINGS.host,
+            "port": SECURITY.port,
+            "allowed_hosts": sorted(SECURITY.extra_hosts),
+            # A fingerprint, not the token: enough for another run to notice
+            # the two disagree, useless to anyone wanting to authenticate.
+            "token_fingerprint": security.token_fingerprint(SECURITY.token),
+        }
+    return payload
 
 
 if STATIC_DIR.exists():
@@ -1811,8 +1838,11 @@ def _project_payload(project: Project) -> dict[str, Any]:
     return payload
 
 
-def _existing_run(port: int, timeout: float = 1.5) -> bool:
-    """Whether the thing already holding `port` is another run of this app.
+def _existing_run(port: int, timeout: float = 1.5) -> dict[str, Any] | None:
+    """The health payload if another run of this app holds `port`, else None.
+
+    Returns the payload rather than a bare yes, because what gets printed next
+    has to describe *that* run and not this one.
 
     Worth a network round trip on startup because of what happens otherwise.
     `_claim_port` walks forward when a port is busy, so a second `bash run.sh`
@@ -1831,9 +1861,97 @@ def _existing_run(port: int, timeout: float = 1.5) -> bool:
     try:
         with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/healthz", timeout=timeout) as response:
-            return json.loads(response.read(200)).get("app") == HEALTH_MARKER
+            payload = json.loads(response.read(4096))
+        return payload if payload.get("app") == HEALTH_MARKER else None
     except (OSError, ValueError, urllib.error.URLError):
-        return False
+        return None
+
+
+def _existing_run_message(running: dict[str, Any], preferred: int) -> str:
+    """What to print when this invocation found an earlier one already serving.
+
+    Built from what *that* run reports about itself. The previous version built
+    it from this process's own settings, which are the environment variables of
+    the invocation that is about to exit — so changing RESEARCH_SUITE_HOST or
+    RESEARCH_SUITE_ALLOWED_HOSTS and running again printed the new address for
+    the old server. On a Raspberry Pi that produced a LAN URL for a process
+    listening only on 127.0.0.1, and a browser saying ERR_CONNECTION_REFUSED,
+    which reads as "the feature does not work" rather than "restart it".
+
+    So when the two disagree, say so and say what to do about it.
+    """
+    bind = running.get("bind") or {}
+    live = security.SecurityConfig(
+        SETTINGS.session_token,
+        bind.get("host", SETTINGS.host),
+        int(bind.get("port", preferred)),
+        extra_hosts=set(bind.get("allowed_hosts") or ()),
+    )
+
+    lines = [
+        "",
+        f"  Already running on port {live.port}. This did not start a second "
+        "copy.",
+        "",
+        f"  Open:  {live.launch_url()}",
+        "",
+        "  That is the run that is already going, and the token is the same "
+        "one — it",
+        "  is stored, not regenerated per run, so this URL keeps working.",
+    ]
+
+    fingerprint = bind.get("token_fingerprint")
+    if fingerprint and fingerprint != security.token_fingerprint(
+            SETTINGS.session_token):
+        lines += [
+            "",
+            "  ⚠  That run holds a different token from the one configured "
+            "here, so",
+            "     the URL above is a guess. Read the address out of the "
+            "terminal that",
+            "     is running it, or stop it and start again.",
+        ]
+
+    wanted_hosts = set(SETTINGS.allowed_hosts)
+    live_hosts = set(live.extra_hosts)
+    differs = []
+    if bind and bind.get("host") != SETTINGS.host:
+        differs.append(
+            f"it is bound to {bind.get('host')}, not the {SETTINGS.host} you "
+            "just asked for")
+    if bind and wanted_hosts - live_hosts:
+        missing = ", ".join(sorted(wanted_hosts - live_hosts))
+        differs.append(f"it does not answer to {missing}")
+    if differs:
+        lines += [
+            "",
+            "  ⚠  It is not running with the settings you just gave, because "
+            "those",
+            "     only apply to a run they start. Specifically: "
+            + "; ".join(differs) + ".",
+            "",
+            "     Stop it and start again to apply them:",
+            "         pkill -f 'app.main' && bash run.sh",
+        ]
+    elif not bind:
+        # An older build answering /healthz without the detail.
+        lines += [
+            "",
+            "  It is an older build that does not report its own settings, so "
+            "the",
+            "  address above is this invocation's guess. If it does not open, "
+            "stop",
+            "  that run and start again.",
+        ]
+
+    lines += [
+        "",
+        "  To stop it, press Ctrl-C in the terminal that is running it. If you "
+        "cannot",
+        "  find that terminal, `pkill -f 'app.main'` will stop every copy.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _claim_port(host: str, preferred: int, *, tries: int = 12):
@@ -1902,19 +2020,9 @@ def run() -> None:
     # port number, so a run that quietly moved from 3000 to 3003 left every
     # 3000 address — the bookmark, the open tab, the one in the earlier
     # banner — pointing at nothing.
-    if _existing_run(preferred):
-        SECURITY.rebind(preferred)
-        print(f"""
-  Already running on port {preferred}. This did not start a second copy.
-
-  Open:  {SECURITY.launch_url()}
-
-  That is the run that is already going, and the token is the same one — it
-  is stored, not regenerated per run, so this URL keeps working.
-
-  To stop it, press Ctrl-C in the terminal that is running it. If you cannot
-  find that terminal, `pkill -f 'app.main'` will stop every copy.
-""", flush=True)
+    running = _existing_run(preferred)
+    if running is not None:
+        print(_existing_run_message(running, preferred), flush=True)
         return
 
     sock, port, moved = _claim_port(SETTINGS.host, preferred)

@@ -33,6 +33,7 @@ authenticating proxy in front of it, or leave it on localhost.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import ipaddress
@@ -197,6 +198,33 @@ class SecurityConfig:
         # Constant-time compare, so a wrong token cannot be narrowed down by
         # timing. Cheap, and the alternative is indefensible.
         return bool(supplied) and hmac.compare_digest(supplied, self.token)
+
+
+def is_loopback_client(address: str) -> bool:
+    """Whether a connecting peer is on this machine.
+
+    Used to decide who is told how this run is configured. Peer addresses come
+    from the socket, not from a header, so unlike `Host` this one cannot be
+    forged by the client.
+    """
+    if not address:
+        return False
+    try:
+        return ipaddress.ip_address(address.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def token_fingerprint(token: str) -> str:
+    """A short, one-way fingerprint of a token.
+
+    Enough for one run to notice that another run is holding a different
+    token — which happens with a different RESEARCH_SUITE_DATA or a pinned
+    RESEARCH_SUITE_TOKEN — without the token itself travelling anywhere.
+    """
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
 def _ordered(hosts) -> list[str]:

@@ -415,8 +415,12 @@ def test_a_second_run_is_sent_to_the_first_rather_than_hopping() -> None:
     check("the probe runs before the port walk", probe < walk, True)
     check("and a match returns instead of starting a second copy",
           "return" in run[probe:walk], True)
-    check("naming the address that does work",
-          "SECURITY.launch_url()" in run[probe:walk], True)
+    check("and hands off to the message builder",
+          "_existing_run_message(running, preferred)" in run[probe:walk], True)
+    # It must NOT print this process's own URL there: this invocation's
+    # settings describe the run that is about to exit, not the one serving.
+    check("not this invocation's own address",
+          "SECURITY.launch_url()" in run[probe:walk], False)
 
 
 def test_a_restart_reclaims_its_own_port() -> None:
@@ -809,6 +813,69 @@ def test_a_wide_bind_without_an_allowlist_says_so() -> None:
         quiet = security.startup_banner(
             security.SecurityConfig("tok", "127.0.0.1", 8765), [])
         check("loopback is not warned about", "421" in quiet, False)
+
+
+def test_only_this_machine_is_told_how_this_run_is_configured() -> None:
+    """`/healthz` needs no token, so it must not carry one — and bound wide,
+    anything on the network can reach it."""
+    check("loopback recognised", security.is_loopback_client("127.0.0.1"), True)
+    check("IPv6 loopback too", security.is_loopback_client("::1"), True)
+    check("bracketed IPv6 loopback",
+          security.is_loopback_client("[::1]"), True)
+    for address in ("192.168.1.168", "10.0.0.4", "8.8.8.8", "", "not-an-ip"):
+        check(f"{address!r} is not this machine",
+              security.is_loopback_client(address), False)
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text("utf-8")
+    route = source[source.index("async def healthz("):
+                   source.index("if STATIC_DIR.exists():")]
+    check("the detail is gated on the peer address",
+          "security.is_loopback_client(client)" in route, True)
+    check("the payload has no token field", '"token":' in route, False)
+    check("only a fingerprint of it",
+          "security.token_fingerprint(SECURITY.token)" in route, True)
+
+    # The fingerprint identifies a token without carrying it.
+    first = security.token_fingerprint("a-real-token-value")
+    check("stable", first, security.token_fingerprint("a-real-token-value"))
+    check("short", len(first), 12)
+    check("not the token", "a-real-token-value" in first, False)
+    check("different tokens differ",
+          first != security.token_fingerprint("another-token-value"), True)
+    check("empty stays empty", security.token_fingerprint(""), "")
+
+
+def test_a_second_run_describes_the_first_not_itself() -> None:
+    """The "already running" message used to be built from the settings of the
+    invocation that was about to exit.
+
+    On the Pi that meant: start it bound to loopback, then run it again with
+    RESEARCH_SUITE_HOST=0.0.0.0 and a LAN name, and it printed a LAN URL for a
+    server listening only on 127.0.0.1. The browser answered
+    ERR_CONNECTION_REFUSED, which reads as "the feature is broken" rather than
+    "the settings only apply to a run they start".
+    """
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text("utf-8")
+
+    message = source[source.index("def _existing_run_message("):
+                     source.index("def _claim_port(")]
+    check("the URL comes from the running process",
+          "live.launch_url()" in message, True)
+    check("built from what that run reported",
+          'bind.get("host", SETTINGS.host)' in message, True)
+    check("and its allowlist, not this one's",
+          'bind.get("allowed_hosts")' in message, True)
+    check("a disagreement is named", "not the" in message, True)
+    check("with the command that fixes it",
+          "pkill -f 'app.main'" in message, True)
+
+    # And the probe has to hand the payload back, not a bare yes.
+    probe = source[source.index("def _existing_run("):
+                   source.index("def _existing_run_message(")]
+    check("the probe returns the payload", "return payload if" in probe, True)
+    check("and None when it is not us", "return None" in probe, True)
 
 
 def main() -> int:
