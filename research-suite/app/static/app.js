@@ -1955,9 +1955,19 @@ function accessNotice() {
       + 'data and the API keys.');
   }
 
-  return notice(`Bound to ${settings.host}:${settings.port}. ⚠ Not localhost. `
-    + 'This is reachable from your network — put an authenticating proxy in '
-    + 'front of it.', 'bad');
+  const named = access.allowed_hosts || [];
+  return el('div', { class: 'stack' },
+    notice(`Bound to ${settings.host}:${settings.port}. ⚠ Not localhost. `
+      + 'This is reachable from your network — put an authenticating proxy in '
+      + 'front of it.', 'bad'),
+    named.length
+      ? notice(`Answering to ${named.join(', ')} as well as localhost. Any `
+        + 'other address is refused with a 421 — the bind decides which '
+        + 'interface accepts a connection, this list decides who is answered.')
+      : notice('No host names are allowlisted, so a browser on another machine '
+        + 'is refused with a 421 even though the port is open. Set '
+        + 'RESEARCH_SUITE_ALLOWED_HOSTS to the address you type — for example '
+        + 'RESEARCH_SUITE_ALLOWED_HOSTS=pi-3bplus.local — and restart.', 'warn'));
 }
 
 function grammarlyCard() {

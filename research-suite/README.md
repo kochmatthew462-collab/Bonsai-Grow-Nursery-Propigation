@@ -986,6 +986,43 @@ Prints the launch URL and nothing else, works without the virtual environment,
 and reports the port that is *actually* serving rather than the configured one —
 which differ exactly when the link matters most.
 
+### Reaching it from another machine
+
+Running the suite on an always-on box — a Raspberry Pi, a spare laptop — means
+the browser is not on the machine doing the serving, and two separate settings
+have to agree before that works. Binding wide decides which network interface
+accepts a connection. The `Host` allowlist decides who gets answered. They are
+deliberately separate, because the allowlist is the DNS-rebinding defence and it
+would be worthless if opening a port opened it too.
+
+```bash
+RESEARCH_SUITE_HOST=0.0.0.0 \
+RESEARCH_SUITE_ALLOWED_HOSTS=pi-3bplus.local,192.168.1.50 \
+bash run.sh
+```
+
+Set only the first and the port is open but every request from the other machine
+comes back **421** — the port is listening, the app is healthy, and the address
+looks fine, which is a miserable thing to debug. So the banner says so on
+startup, and `python3 -m app.doctor` fails the check by name.
+
+`RESEARCH_SUITE_ALLOWED_HOSTS` takes a comma-separated list and accepts whatever
+you paste: a bare name, a name and port, or the whole URL out of the address
+bar. It defaults to empty and is never filled in for you — not from the request
+(a `Host` header is attacker-controlled, so inferring it would delete the
+defence outright) and not from the machine's own hostname (which would quietly
+admit a name you never chose). Naming the hosts is the point of them.
+
+The launch URL follows the same rule. `http://0.0.0.0:8765/` is not an address —
+`0.0.0.0` means "accept on every interface", and pasting it into a browser
+reaches nothing — so with the app bound wide the banner prints the name you
+allowlisted, and falls back to `localhost` when you have not named one.
+
+None of this is a login. The token is still the only credential, and on a LAN it
+is doing real work rather than backing up a loopback bind, so `## Security,
+honestly` below applies with more force, not less: put an authenticating proxy
+in front of this if the network is not one you control.
+
 ---
 
 ## Security, honestly
@@ -1016,6 +1053,11 @@ Tailscale network behind Tailscale's own authentication should be able to. But
 the token then becomes the only thing between the internet and your API keys,
 and a token in a URL ends up in browser history. Put a real authenticating proxy
 in front of it.
+
+Binding wide does not widen who is admitted. The `Host` allowlist is unchanged
+by it, so a request from another machine is refused until you name that address
+in `RESEARCH_SUITE_ALLOWED_HOSTS` — see *Reaching it from another machine*
+above. Two settings, two decisions, on purpose.
 
 ---
 
@@ -1085,7 +1127,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               3,141 checks, all offline
+tests/               3,736 checks, all offline
 ```
 
 ## Tests
@@ -1107,7 +1149,7 @@ take against Firestore.
 | `test_sources.py` | 85 | Structured-abstract labels preserved, collective authors, `CommentsCorrections` retractions, JATS markup stripped, NCBI identification params sent, **API keys redacted from logs**, failures surfaced rather than swallowed |
 | `test_charting_scales.py` | 1,456 | Every option key on every instrument resolves and is unique; non-overlapping bands; the awkward cases — an untestable GCS component reported as a floor, the CAM algorithm rejecting three-features-without-inattention, each Lund-Browder age column summing to 100%, all seven ESI decision paths, the PAT reported as a pattern rather than a total; and that no copyrighted instrument is used without its rights holder named |
 | `test_charting_language.py` | 607 | **The negative assertions**: nothing fires inside a patient's quotation, `don't` does not open a quoted span, "pain management" is not a staffing complaint, "Pump serial checked" is not a device identifier, clinical numbers are not record numbers, and every objective replacement the tool suggests itself passes the filter |
-| `test_security.py` | 116 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard |
+| `test_security.py` | 168 | Both directions on every check that decides who can drive this: loopback and Codespaces hosts allowed, `[::1]:8765` allowed (stripping the brackets before the port left `::1]:8765` and locked out any machine resolving localhost to IPv6), and refused — another codespace, another port, a `…app.github.dev.evil.test` suffix, a spoofed Origin on a write, a missing token, and a half-configured environment that must not become a wildcard. Plus the LAN allowlist: a named host admitted while `pi-3bplus.local.evil.test` and an un-named neighbour are refused, an empty allowlist admitting nothing extra, the allowlist read from configuration and never from the request or `gethostname()` (asserted against the parsed module, because the comment explaining why we don't call it satisfied a substring search), that the app actually *passes* it through — `SecurityConfig` grew the parameter before anything supplied it, so the setting existed and did nothing — and that no printed URL ever contains `0.0.0.0` |
 | `test_research_tools.py` | 273 | Each database translator checked for the tags it must emit **and the ones it must not** — a PubMed string in CINAHL fails silently; PRISMA arithmetic walked and mismatches reported rather than corrected; the leading-zero rule in both directions; that a missing *p* never renders as "not statistically significant"; that the simulator produces no score, grade or percentage; and that the guideline parser invents nothing when the text does not say — and that it *does* read a structured abstract stated as a sentence, which is the commonest way a journal writes it and which the parser used to miss entirely |
 | `test_frontend.py` | 189 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them; and that the screens which must work before anything exists — Settings, Question, Compliance and APA 7 — are not gated behind creating a project |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |

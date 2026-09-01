@@ -72,7 +72,8 @@ def print_url() -> int:
     """
     settings = settings_module.load()
     config = security.SecurityConfig(
-        settings.session_token, settings.host, settings.port)
+        settings.session_token, settings.host, settings.port,
+        extra_hosts=settings.allowed_hosts)
     live = [p for p in range(settings.port, settings.port + 12)
             if _probe("127.0.0.1", p, 0.4)]
     if not live:
@@ -90,7 +91,8 @@ def main() -> int:
 
     settings = settings_module.load()
     config = security.SecurityConfig(
-        settings.session_token, settings.host, settings.port)
+        settings.session_token, settings.host, settings.port,
+        extra_hosts=settings.allowed_hosts)
 
     print()
     print("  Koch Clinical Suite — self check")
@@ -150,11 +152,24 @@ def main() -> int:
         return 1
 
     # 4. Does the host check accept what a browser would send.
-    for header in filter(None, [f"localhost:{port}", config.codespace]):
+    #    The allowlisted names are checked too, because on a machine you reach
+    #    from a second device that is the check that matters: the port can be
+    #    open and the app perfectly healthy while every request from the other
+    #    machine comes back 421.
+    candidates = [f"localhost:{port}", config.codespace]
+    candidates += [f"{host}:{port}" for host in config.extra_hosts]
+    for header in filter(None, candidates):
         allowed = config.host_allowed(header)
         line(OK if allowed else BAD, f"Host header accepted: {header}",
              "" if allowed else "This is the DNS-rebinding allowlist refusing "
                                 "the address you are opening.")
+
+    if not config.local_only and not in_cs and not config.extra_hosts:
+        line(BAD, "Bound beyond localhost with no host names allowlisted.",
+             "A browser on another machine will be refused with a 421. Set "
+             "RESEARCH_SUITE_ALLOWED_HOSTS to the address you type — for "
+             "example RESEARCH_SUITE_ALLOWED_HOSTS=pi-3bplus.local,"
+             "192.168.1.50 — and restart.")
 
     # 5. Codespaces: is the port actually forwarded. This is the layer that
     #    produces a 404 while everything above it is perfectly healthy.

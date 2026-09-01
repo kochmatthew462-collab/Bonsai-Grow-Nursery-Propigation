@@ -49,7 +49,8 @@ from .writing import (
 SETTINGS = settings_module.load()
 STORE = storage.ProjectStore(SETTINGS.data_dir / "projects")
 SECURITY = security.SecurityConfig(
-    SETTINGS.session_token, SETTINGS.host, SETTINGS.port)
+    SETTINGS.session_token, SETTINGS.host, SETTINGS.port,
+    extra_hosts=SETTINGS.allowed_hosts)
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Koch Research Suite", docs_url=None, redoc_url=None,
@@ -168,6 +169,11 @@ async def get_config() -> dict[str, Any]:
             "url": SECURITY.public_url(),
             "codespace": SECURITY.codespace,
             "local_only": SECURITY.local_only and not SECURITY.codespace,
+            # What the Host allowlist admits beyond the loopback names. Shown
+            # on the Settings screen because binding wide and allowlisting a
+            # name are two separate decisions, and the screen that says "not
+            # localhost" is where you look when the other machine gets a 421.
+            "allowed_hosts": sorted(SECURITY.extra_hosts),
         },
         "fonts": sorted(APPROVED_FONTS),
         "sources": [

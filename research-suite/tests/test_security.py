@@ -592,6 +592,225 @@ def test_the_cookie_does_not_stand_alone_against_csrf() -> None:
     check("and refuse a foreign one", "Cross-origin request from" in guard, True)
 
 
+def test_a_named_host_is_admitted_and_nothing_else() -> None:
+    """LAN access is opt-in by name, and the name is the whole of the grant.
+
+    On a Raspberry Pi the app is not on the machine doing the browsing, so the
+    bind has to be wide — and at that point the Host allowlist stops being
+    belt-and-braces over a loopback bind and becomes the thing actually holding
+    the door. It has to admit exactly what was configured and nothing that
+    merely resembles it.
+    """
+    with not_a_codespace():
+        config = security.SecurityConfig(
+            "tok", "0.0.0.0", 8765, extra_hosts={"pi-3bplus.local"})
+        for header in ("pi-3bplus.local", "pi-3bplus.local:8765",
+                       "PI-3BPlus.local:8765", "localhost:8765", "127.0.0.1"):
+            check(f"{header} admitted", config.host_allowed(header), True)
+        for header in ("evil.test",
+                       "pi-3bplus.local.evil.test",     # suffix, not the name
+                       "evil.test/pi-3bplus.local",
+                       "192.168.1.50",                  # not the one configured
+                       "pi-3bplus",                     # not the name either
+                       ""):
+            check(f"{header!r} refused", config.host_allowed(header), False)
+        check("and a wrong token is still a wrong token",
+              config.token_valid("nope"), False)
+
+
+def test_an_empty_allowlist_admits_nothing_extra() -> None:
+    """The default must not be a wildcard. An allowlist that fills itself in is
+    not an allowlist, and the failure mode is silent."""
+    with not_a_codespace():
+        config = security.SecurityConfig("tok", "0.0.0.0", 8765)
+        check("no extra hosts by default", config.extra_hosts, [])
+        for header in ("pi-3bplus.local", "192.168.1.50", "evil.test"):
+            check(f"{header} refused", config.host_allowed(header), False)
+        check("localhost still works", config.host_allowed("localhost"), True)
+
+        # And an explicit empty configuration is the same thing, not a bypass.
+        empty = security.SecurityConfig("tok", "0.0.0.0", 8765, extra_hosts=set())
+        check("empty set is not a wildcard",
+              empty.host_allowed("anything.test"), False)
+
+
+def test_the_printed_address_is_one_you_can_open() -> None:
+    """`http://0.0.0.0:8765/` reaches nothing.
+
+    That is what the banner printed for anyone who bound the app wide outside a
+    Codespace: a link that cannot work, offered as the way in. 0.0.0.0 is a
+    bind address — "accept on every interface" — not a destination.
+    """
+    with not_a_codespace():
+        bare = security.SecurityConfig("tok", "0.0.0.0", 8765)
+        check("no 0.0.0.0 in the URL", "0.0.0.0" in bare.public_url(), False)
+        check("falls back to localhost", bare.public_url(),
+              "http://localhost:8765/")
+
+        named = security.SecurityConfig(
+            "tok", "0.0.0.0", 8765,
+            extra_hosts={"pi-3bplus.local", "192.168.1.50"})
+        check("prints an allowlisted name", named.public_url(),
+              "http://192.168.1.50:8765/")
+        check("and the token comes with it", named.launch_url(),
+              "http://192.168.1.50:8765/#token=tok")
+        check("the choice is stable across runs",
+              security.SecurityConfig(
+                  "tok", "0.0.0.0", 8765,
+                  extra_hosts={"192.168.1.50", "pi-3bplus.local"}).public_url(),
+              named.public_url())
+
+        # Bound to loopback, an allowlisted LAN name is not reachable however
+        # many are configured, so printing one would be a lie.
+        local = security.SecurityConfig(
+            "tok", "127.0.0.1", 8765, extra_hosts={"pi-3bplus.local"})
+        check("loopback still says localhost", local.public_url(),
+              "http://localhost:8765/")
+
+        # An explicit non-loopback address is printed as given, and an IPv6
+        # literal has to be bracketed or it is not a URL.
+        check("an explicit address is kept",
+              security.SecurityConfig("tok", "192.168.1.50", 8765).public_url(),
+              "http://192.168.1.50:8765/")
+        check("IPv6 is bracketed",
+              security.SecurityConfig("tok", "fd00::5", 8765).public_url(),
+              "http://[fd00::5]:8765/")
+        check("and :: falls back too",
+              security.SecurityConfig("tok", "::", 8765).public_url(),
+              "http://localhost:8765/")
+
+
+def test_the_allowlist_is_parsed_the_way_it_gets_typed() -> None:
+    """People paste what they typed into the browser, so a scheme, a port and a
+    trailing path all have to survive being pasted."""
+    from app.settings import _host_list
+
+    check("empty is empty", _host_list(""), set())
+    check("whitespace is empty", _host_list("  ,  ; "), set())
+    check("a plain name", _host_list("pi-3bplus.local"), {"pi-3bplus.local"})
+    check("a list", _host_list("pi.local, 192.168.1.50"),
+          {"pi.local", "192.168.1.50"})
+    check("semicolons too", _host_list("pi.local;192.168.1.50"),
+          {"pi.local", "192.168.1.50"})
+    check("a pasted URL", _host_list("http://pi-3bplus.local:8765/#token=x"),
+          {"pi-3bplus.local"})
+    check("case folded", _host_list("PI-3BPlus.Local"), {"pi-3bplus.local"})
+    check("a bracketed IPv6 keeps its brackets",
+          _host_list("[fd00::5]:8765"), {"[fd00::5]"})
+    check("a bare IPv6 keeps every group",
+          _host_list("fd00::5"), {"fd00::5"})
+
+    # And what it parses is what the allowlist then honours.
+    with not_a_codespace():
+        config = security.SecurityConfig(
+            "tok", "0.0.0.0", 8765,
+            extra_hosts=_host_list("http://pi-3bplus.local:8765/"))
+        check("parsed then admitted",
+              config.host_allowed("pi-3bplus.local:8765"), True)
+
+
+def test_the_allowlist_is_read_from_configuration_only() -> None:
+    """Never from the request, never from the machine's own hostname.
+
+    Inferring it from the Host header would delete the DNS-rebinding defence
+    outright; inferring it from `socket.gethostname()` would quietly admit a
+    name the operator never chose. Naming the hosts is the point of them.
+    """
+    import tempfile
+    from app import settings as settings_module
+
+    # Checked against the parsed module rather than the text, because the
+    # comment explaining why we do not call gethostname() matched a substring
+    # search and made the assertion pass for the wrong reason.
+    import ast
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "app" /
+                      "settings.py").read_text("utf-8"))
+    names = {node.attr for node in ast.walk(tree)
+             if isinstance(node, ast.Attribute)}
+    names |= {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    check("hostname is never consulted",
+          {"gethostname", "getfqdn"} & names, set())
+
+    with tempfile.TemporaryDirectory() as directory:
+        saved_data = os.environ.get("RESEARCH_SUITE_DATA")
+        saved_hosts = os.environ.get("RESEARCH_SUITE_ALLOWED_HOSTS")
+        os.environ["RESEARCH_SUITE_DATA"] = directory
+        os.environ.pop("RESEARCH_SUITE_ALLOWED_HOSTS", None)
+        try:
+            check("nothing allowlisted by default",
+                  settings_module.load().allowed_hosts, set())
+
+            os.environ["RESEARCH_SUITE_ALLOWED_HOSTS"] = \
+                "pi-3bplus.local, 192.168.1.50"
+            loaded = settings_module.load()
+            check("the environment is honoured", loaded.allowed_hosts,
+                  {"pi-3bplus.local", "192.168.1.50"})
+            check("and shown in the settings screen",
+                  loaded.redacted()["allowed_hosts"],
+                  ["192.168.1.50", "pi-3bplus.local"])
+        finally:
+            if saved_hosts is None:
+                os.environ.pop("RESEARCH_SUITE_ALLOWED_HOSTS", None)
+            else:
+                os.environ["RESEARCH_SUITE_ALLOWED_HOSTS"] = saved_hosts
+            if saved_data is None:
+                os.environ.pop("RESEARCH_SUITE_DATA", None)
+            else:
+                os.environ["RESEARCH_SUITE_DATA"] = saved_data
+
+
+def test_the_running_app_is_given_the_allowlist() -> None:
+    """Parsed and unused is the same as absent.
+
+    `SecurityConfig` grew `extra_hosts` before anything passed it, so the
+    setting existed and did nothing — the exact defect this checks for.
+    """
+    root = Path(__file__).resolve().parents[1]
+    for name in ("main.py", "doctor.py"):
+        source = (root / "app" / name).read_text("utf-8")
+        check(f"{name} passes the allowlist through",
+              "extra_hosts=" in source and "allowed_hosts" in source, True)
+
+
+def test_the_settings_screen_says_what_is_admitted() -> None:
+    """The screen that reports "not localhost" is where you look when the other
+    machine gets a 421, so it has to answer the question rather than restate
+    the bind address."""
+    root = Path(__file__).resolve().parents[1]
+    payload = (root / "app" / "main.py").read_text("utf-8")
+    check("the allowlist is sent to the UI",
+          '"allowed_hosts": sorted(SECURITY.extra_hosts)' in payload, True)
+
+    script = (root / "app" / "static" / "app.js").read_text("utf-8")
+    notice = script[script.index("function accessNotice("):
+                    script.index("function grammarlyCard(")]
+    check("the notice reads it", "access.allowed_hosts" in notice, True)
+    check("names the setting when empty",
+          "RESEARCH_SUITE_ALLOWED_HOSTS" in notice, True)
+    check("and explains the 421", "421" in notice, True)
+
+
+def test_a_wide_bind_without_an_allowlist_says_so() -> None:
+    """The next thing that happens is a 421 from the other machine, so the
+    banner has to name the setting that prevents it rather than leaving the
+    user to read a status code."""
+    with not_a_codespace():
+        bare = security.startup_banner(
+            security.SecurityConfig("tok", "0.0.0.0", 8765), [])
+        check("names the setting", "RESEARCH_SUITE_ALLOWED_HOSTS" in bare, True)
+        check("and explains the 421", "421" in bare, True)
+
+        named = security.startup_banner(
+            security.SecurityConfig("tok", "0.0.0.0", 8765,
+                                    extra_hosts={"pi-3bplus.local"}), [])
+        check("lists what is admitted", "pi-3bplus.local" in named, True)
+        check("and stops nagging", "421" in named, False)
+
+        quiet = security.startup_banner(
+            security.SecurityConfig("tok", "127.0.0.1", 8765), [])
+        check("loopback is not warned about", "421" in quiet, False)
+
+
 def main() -> int:
     for name, function in sorted(globals().items()):
         if name.startswith("test_") and callable(function):
