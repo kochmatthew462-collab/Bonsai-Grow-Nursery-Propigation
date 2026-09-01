@@ -637,3 +637,28 @@ label.tight input { font-size: 0.85rem; }
   max-width: 60ch;
   line-height: 1.5;
 }
+
+/* The writing surface. Wide, tall and quiet: this is the one box in the
+   application someone will spend an hour inside, and the chrome around it
+   should not compete with the sentence being written. Line height is loose
+   because the output is double spaced and a cramped editor makes people write
+   shorter paragraphs than they mean to. */
+.paper-body {
+  width: 100%;
+  min-height: 22rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1rem;
+  line-height: 1.75;
+  padding: 0.9rem 1rem;
+}
+
+/* Heading depth in the outline. Indentation is set here rather than with a
+   style attribute because the CSP is `style-src 'self'` — an inline style is
+   dropped without an error anyone would see, which is how the outline came to
+   render every level flush left. */
+.outline-level { display: inline-block; }
+.outline-1 { padding-left: 0; }
+.outline-2 { padding-left: 1.1rem; }
+.outline-3 { padding-left: 2.2rem; }
+.outline-4 { padding-left: 3.3rem; }
+.outline-5 { padding-left: 4.4rem; }

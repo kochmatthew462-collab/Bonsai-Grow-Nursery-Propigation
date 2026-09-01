@@ -27,6 +27,7 @@ from .apa import (
     assemble, audit_document, deck as deck_module, figures as figures_module,
     prisma as prisma_module, workbook as workbook_module,
 )
+from .apa import compose as compose_module
 from .charting import routes as charting_routes, store as charting_store
 from .compliance import journals as journals_module, rubric as rubric_module, \
     simulator as simulator_module
@@ -48,6 +49,10 @@ from .writing import (
 
 SETTINGS = settings_module.load()
 STORE = storage.ProjectStore(SETTINGS.data_dir / "projects")
+# Written papers live beside projects but never inside them: the two are
+# different objects with different lifetimes, and a reflective essay has no
+# business being screened for evidence level.
+PAPERS = compose_module.PaperStore(SETTINGS.data_dir / "papers")
 SECURITY = security.SecurityConfig(
     SETTINGS.session_token, SETTINGS.host, SETTINGS.port,
     extra_hosts=SETTINGS.allowed_hosts)
@@ -639,6 +644,185 @@ async def integrity_report(project_id: str) -> dict[str, Any]:
 
 
 # -------------------------------------------------------------------- export
+
+
+# ------------------------------------------------------- writing in APA 7
+#
+# The straight lane: a paper you write, formatted to APA 7, with none of the
+# research pipeline in front of it. See app/apa/compose.py for why this is a
+# separate object rather than a flavour of Project.
+
+
+def _load_paper(paper_id: str) -> compose_module.Paper:
+    try:
+        return PAPERS.load(paper_id)
+    except FileNotFoundError:
+        raise HTTPException(404, f"No paper named {paper_id!r}.")
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+
+
+def _paper_payload(paper: compose_module.Paper) -> dict[str, Any]:
+    blocks = compose_module.parse_body(paper.body)
+    return {
+        "paper": compose_module.to_jsonable(paper),
+        "outline": compose_module.outline(blocks),
+        "words": compose_module.word_count(blocks),
+        "findings": compose_module.check(paper, blocks),
+        "citations": compose_module.reference_preview(paper.references),
+        "markup": [{"mark": mark, "means": means}
+                   for mark, means in compose_module.MARKUP_HELP],
+        "reference_fields": compose_module.REFERENCE_FIELDS,
+        "fonts": sorted(APPROVED_FONTS),
+        "default_font": SETTINGS.default_font,
+    }
+
+
+@app.get("/api/papers")
+async def list_papers() -> dict[str, Any]:
+    return {"papers": PAPERS.list_papers(),
+            "markup": [{"mark": mark, "means": means}
+                       for mark, means in compose_module.MARKUP_HELP]}
+
+
+@app.post("/api/papers")
+async def create_paper(title: str = Body(...),
+                       variant: str = Body("student")) -> dict[str, Any]:
+    if not title.strip():
+        raise HTTPException(400, "A paper needs a title to start from. It can "
+                                 "be changed at any time.")
+    paper = PAPERS.new_paper(title, variant)
+    return _paper_payload(paper)
+
+
+@app.get("/api/papers/{paper_id}")
+async def get_paper(paper_id: str) -> dict[str, Any]:
+    return _paper_payload(_load_paper(paper_id))
+
+
+@app.put("/api/papers/{paper_id}")
+async def save_paper(paper_id: str, changes: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    paper = _load_paper(paper_id)
+    editable = {"variant", "title", "authors", "affiliations", "course",
+                "instructor", "due_date", "running_head", "author_note",
+                "abstract", "keywords", "body", "font"}
+    for name, value in changes.items():
+        if name not in editable:
+            continue
+        if name in ("authors", "affiliations", "keywords"):
+            if isinstance(value, str):
+                value = [line.strip() for line in value.splitlines() if line.strip()]
+            value = [str(item).strip() for item in (value or []) if str(item).strip()]
+        elif name == "font" and value and value not in APPROVED_FONTS:
+            raise HTTPException(400, f"{value} is not an APA 7 §2.19 typeface.")
+        elif name == "variant" and value not in ("student", "professional"):
+            raise HTTPException(400, "A paper is student or professional.")
+        else:
+            value = str(value)
+        setattr(paper, name, value)
+    PAPERS.save(paper)
+    return _paper_payload(paper)
+
+
+@app.delete("/api/papers/{paper_id}")
+async def delete_paper(paper_id: str) -> dict[str, bool]:
+    return {"deleted": PAPERS.delete(paper_id)}
+
+
+@app.post("/api/papers/{paper_id}/references")
+async def add_reference(paper_id: str,
+                        values: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    paper = _load_paper(paper_id)
+    work = compose_module.work_from_fields(values)
+    if not (work.title or work.authors):
+        raise HTTPException(400, "A reference needs at least a title or an "
+                                 "author. Everything else APA can work around; "
+                                 "those two it cannot.")
+    paper.references = [w for w in paper.references if w.key != work.key]
+    paper.references.append(work)
+    PAPERS.save(paper)
+    return _paper_payload(paper)
+
+
+@app.post("/api/papers/{paper_id}/references/lookup")
+async def lookup_reference(paper_id: str, doi: str = Body(...)) -> dict[str, Any]:
+    """Fill a reference from a DOI, so the commonest case is not retyped.
+
+    Failure here is reported rather than swallowed: a lookup that quietly
+    returns nothing leaves someone staring at an empty form wondering whether
+    they typed the DOI wrong.
+    """
+    paper = _load_paper(paper_id)
+    cleaned = doi.strip().replace("https://doi.org/", "").replace("doi:", "").strip()
+    if not cleaned:
+        raise HTTPException(400, "No DOI supplied.")
+    async with Fetcher(SETTINGS) as fetcher:
+        work = await scholarly.lookup_doi(fetcher, cleaned)
+    if work is None:
+        raise HTTPException(404, f"Nothing found for {cleaned}. Check the DOI, "
+                                 "or enter the reference by hand — every field "
+                                 "below is optional except a title or author.")
+    work.key = work.fingerprint()
+    paper.references = [w for w in paper.references if w.key != work.key]
+    paper.references.append(work)
+    PAPERS.save(paper)
+    return _paper_payload(paper)
+
+
+@app.delete("/api/papers/{paper_id}/references/{key}")
+async def remove_reference(paper_id: str, key: str) -> dict[str, Any]:
+    paper = _load_paper(paper_id)
+    paper.references = [w for w in paper.references if w.key != key]
+    PAPERS.save(paper)
+    return _paper_payload(paper)
+
+
+@app.post("/api/papers/{paper_id}/export")
+async def export_paper(paper_id: str, font: str = Body(""),
+                       force: bool = Body(False)) -> dict[str, Any]:
+    """Write the .docx.
+
+    Errors stop the export and warnings do not. The line is drawn at what APA
+    states as a rule: a skipped heading level or a reference nobody cited is a
+    defect in the paper, while an abstract of 260 words is guidance you may
+    have a reason to be outside. `force` overrides, because a draft printed for
+    your own review is a legitimate thing to want.
+    """
+    paper = _load_paper(paper_id)
+    blocks = compose_module.parse_body(paper.body)
+    findings = compose_module.check(paper, blocks)
+    blockers = [f for f in findings if f["severity"] == "error"]
+    if blockers and not force:
+        return {"exported": [], "findings": findings, "blockers": blockers,
+                "message": ("Export stopped. These are APA 7 rules rather than "
+                            "preferences — fix them, or export anyway for a "
+                            "draft you are reading yourself.")}
+
+    chosen = font or paper.font or SETTINGS.default_font
+    if chosen not in APPROVED_FONTS:
+        raise HTTPException(400, f"{chosen} is not an APA 7 §2.19 typeface.")
+
+    project = paper.as_project()
+    context = CitationContext(paper.references,
+                              group_abbreviations=_group_abbreviations(project))
+    builder = ApaPaper(project, context, font=chosen)
+    builder.title_page()
+    if paper.abstract.strip():
+        builder.abstract(paper.abstract, paper.keywords)
+    compose_module.write_body(builder, blocks, paper.title)
+    builder.references(sorted(paper.references, key=lambda w: w.sort_key()))
+
+    out = SETTINGS.export_dir / f"paper-{paper.paper_id}"
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{paper.paper_id}.docx"
+    builder.save(str(path))
+    return {
+        "exported": [{"kind": "paper", "name": path.name, "path": str(path),
+                      "words": str(compose_module.word_count(blocks))}],
+        "findings": findings,
+        "blockers": [],
+        "message": f"Written to {path}.",
+    }
 
 
 @app.post("/api/projects/{project_id}/export")
