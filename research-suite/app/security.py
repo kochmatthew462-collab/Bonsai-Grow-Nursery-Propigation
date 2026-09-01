@@ -87,7 +87,12 @@ class SecurityConfig:
         self.token = token
         self.host = host
         self.port = port
-        self.allowed_hosts = set(LOCAL_HOSTS) | set(extra_hosts or set())
+        # Kept as an ordered list as well as folded into the set, because
+        # `public_url()` has to name exactly one of them and "whichever the set
+        # happens to iterate first" is a different printed address on different
+        # runs — the sort makes the launch URL reproducible.
+        self.extra_hosts = _ordered(extra_hosts)
+        self.allowed_hosts = set(LOCAL_HOSTS) | set(self.extra_hosts)
         self.local_only = _is_loopback(host)
         # A Codespace forwards the port over HTTPS under a hostname derived from
         # the codespace name. Allowed only when the environment says we are in
@@ -119,7 +124,29 @@ class SecurityConfig:
         """Where to actually open this, which is not always localhost."""
         if self.codespace:
             return f"https://{self.codespace}/"
-        return f"http://{'localhost' if self.local_only else self.host}:{self.port}/"
+        return f"http://{_authority(self._url_host())}:{self.port}/"
+
+    def _url_host(self) -> str:
+        """The hostname worth printing, which is never the bind address.
+
+        `0.0.0.0` and `::` mean "accept on every interface". They are not
+        destinations: pasted into a browser they reach nothing, and the banner
+        printed exactly that for anyone who bound the app wide outside a
+        Codespace — a link that cannot work, offered as the way in.
+
+        When the app is deliberately bound wide, the address worth printing is
+        the one the operator allowlisted, because that is the name they intend
+        to type. With none configured we fall back to localhost, which at least
+        works on the machine doing the serving and is a truthful statement that
+        nothing else has been admitted yet.
+        """
+        if _is_unspecified(self.host):
+            return self.extra_hosts[0] if self.extra_hosts else "localhost"
+        if self.local_only:
+            # Bound to loopback, so an allowlisted LAN name is not reachable
+            # here however many are configured. Printing one would be a lie.
+            return "localhost"
+        return self.host
 
     def launch_url(self) -> str:
         """The address to actually open, token included.
@@ -170,6 +197,36 @@ class SecurityConfig:
         # Constant-time compare, so a wrong token cannot be narrowed down by
         # timing. Cheap, and the alternative is indefensible.
         return bool(supplied) and hmac.compare_digest(supplied, self.token)
+
+
+def _ordered(hosts) -> list[str]:
+    """A stable, de-duplicated host list from a set or a sequence."""
+    if not hosts:
+        return []
+    if isinstance(hosts, (list, tuple)):
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for host in hosts:
+            if host and host not in seen:
+                seen.add(host)
+                ordered.append(host)
+        return ordered
+    return sorted(host for host in hosts if host)
+
+
+def _authority(host: str) -> str:
+    """Bracket a bare IPv6 literal so the URL is a URL."""
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _is_unspecified(host: str) -> bool:
+    """0.0.0.0 or :: — a bind address rather than somewhere to connect to."""
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_unspecified
+    except ValueError:
+        return False
 
 
 def _is_loopback(host: str) -> bool:
@@ -348,6 +405,21 @@ def startup_banner(config: SecurityConfig, warnings: list[str]) -> str:
             "  in front of this (Cloudflare Access, Tailscale, or Caddy with",
             "  basic auth over TLS), or set RESEARCH_SUITE_HOST=127.0.0.1.",
         ]
+        if config.extra_hosts:
+            lines += [
+                "",
+                "  Answering to these names as well as localhost:",
+                "      " + ", ".join(config.extra_hosts),
+            ]
+        else:
+            lines += [
+                "",
+                "  No host names are allowlisted, so a browser on another machine",
+                "  will be refused with a 421 even though the port is open — the",
+                "  bind decides which interface accepts a connection, the Host",
+                "  allowlist decides who is answered. Name the address you type:",
+                "      RESEARCH_SUITE_ALLOWED_HOSTS=pi-3bplus.local,192.168.1.50",
+            ]
     for warning in warnings:
         lines += ["", f"  Note: {warning}"]
     lines += ["", "  Stop with Ctrl-C.", ""]

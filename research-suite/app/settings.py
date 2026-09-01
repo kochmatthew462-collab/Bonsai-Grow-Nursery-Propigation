@@ -102,6 +102,11 @@ class Settings:
     contact_email: str = ""
     default_font: str = "Times New Roman"
     session_token: str = ""
+    # Host header values admitted in addition to the loopback names. Empty by
+    # default and never derived from the machine's own hostname or from an
+    # incoming request: an allowlist that fills itself in is not an allowlist.
+    # Set RESEARCH_SUITE_ALLOWED_HOSTS to open it, deliberately.
+    allowed_hosts: set[str] = field(default_factory=set)
     api_keys: dict[str, str] = field(default_factory=dict)
     keyring_available: bool = False
     env_file: Path | None = None
@@ -121,6 +126,7 @@ class Settings:
             "data_dir": str(self.data_dir),
             "export_dir": str(self.export_dir),
             "keyring_available": self.keyring_available,
+            "allowed_hosts": sorted(self.allowed_hosts),
             "env_file": str(self.env_file) if self.env_file else None,
             "keys": [
                 {
@@ -237,6 +243,23 @@ def load(root: Path | None = None) -> Settings:
         else "127.0.0.1"
     settings.host = os.environ.get("RESEARCH_SUITE_HOST", default_host).strip()
     settings.port = int(os.environ.get("RESEARCH_SUITE_PORT", "8765"))
+    # Extra Host header values to admit — a comma-separated list, e.g.
+    # "pi-3bplus.local,192.168.1.50". Needed on a Raspberry Pi or any other
+    # always-on box you reach from a second machine: binding to 0.0.0.0 decides
+    # which interface accepts the connection, but the Host allowlist decides who
+    # is answered, and those are separate on purpose. Without this the browser
+    # on the other machine sends `Host: pi-3bplus.local:8765`, the allowlist has
+    # never heard of it, and the reply is a 421 that reads like the URL is
+    # wrong when the URL is fine.
+    #
+    # It stays an explicit setting rather than being inferred from the request
+    # (attacker-controlled — inferring it would delete the DNS-rebinding
+    # defence outright) or from socket.gethostname() (which would quietly admit
+    # a name the operator never chose). Naming the hosts is the point.
+    settings.allowed_hosts = _host_list(
+        os.environ.get("RESEARCH_SUITE_ALLOWED_HOSTS", "")
+        or env_values.get("RESEARCH_SUITE_ALLOWED_HOSTS", "")
+    )
     settings.default_font = (
         os.environ.get("RESEARCH_SUITE_FONT", "").strip()
         or env_values.get("RESEARCH_SUITE_FONT", "")
@@ -264,6 +287,39 @@ def load(root: Path | None = None) -> Settings:
         or _stable_token(settings.data_dir / ".session-token")
     )
     return settings
+
+
+def _host_list(raw: str) -> set[str]:
+    """Parse a host allowlist, forgiving the ways it gets written by hand.
+
+    People paste what they typed into the browser, so a full URL, a trailing
+    path and a port all have to survive being pasted — the setting is compared
+    against a Host header, which carries the name and optionally the port and
+    nothing else. An IPv6 literal keeps its brackets, because that is how a
+    browser sends it.
+    """
+    hosts: set[str] = set()
+    for chunk in raw.replace(";", ",").split(","):
+        name = chunk.strip()
+        if not name:
+            continue
+        if "://" in name:
+            name = name.split("://", 1)[1]
+        name = name.split("/", 1)[0].strip()
+        if name.startswith("["):
+            # "[fe80::1]:8765" -> "[fe80::1]". Keep the brackets: that is the
+            # form the Host header uses, and SecurityConfig strips them itself.
+            end = name.find("]")
+            if end != -1:
+                name = name[: end + 1]
+        elif name.count(":") == 1:
+            # Exactly one colon is host:port. More than one is a bare IPv6
+            # literal, which has no port to strip.
+            name = name.rsplit(":", 1)[0]
+        name = name.strip().lower()
+        if name:
+            hosts.add(name)
+    return hosts
 
 
 def _stable_token(path: Path) -> str:
