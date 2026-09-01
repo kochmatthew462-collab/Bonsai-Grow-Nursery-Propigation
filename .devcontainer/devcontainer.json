@@ -1,0 +1,44 @@
+{
+  "name": "Koch Clinical Suite",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
+  // Without this the port is never forwarded and the *.app.github.dev URL
+  // returns 404 while the application is running perfectly well inside the
+  // container. Declaring it here means the port exists from the moment the
+  // codespace starts, rather than only once something binds to it.
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": {
+      "label": "Koch Clinical Suite",
+      // Opens the browser as soon as the app binds, so nobody has to find the
+      // PORTS panel or copy a URL out of the terminal. The whole reason this
+      // file exists is that a forwarded port nobody told the editor about
+      // produces a 404 that looks like a broken application.
+      "onAutoForward": "openBrowser",
+      // Private: reachable by the codespace owner's GitHub account and nobody
+      // else. Do not change this to "public" — the session token would become
+      // the only protection, and it travels in the URL.
+      "visibility": "private"
+    }
+  },
+
+  "postCreateCommand": "cd research-suite && python -m pip install --quiet -r requirements.txt",
+
+  // Start the app every time the container starts, which includes waking from
+  // the idle suspend Codespaces applies after about thirty minutes. Without
+  // this, closing the tab and coming back later meant finding a terminal and
+  // starting the server before the forwarded URL would resolve at all — the
+  // browser showed a 404 and said nothing about why.
+  //
+  // setsid detaches it from the shell that postStartCommand runs in, which
+  // exits as soon as the command returns and would otherwise take the server
+  // with it. Output goes to a log rather than nowhere, so a failure to start
+  // is diagnosable after the fact.
+  "postStartCommand": "cd research-suite && setsid nohup bash run.sh > /tmp/koch-suite.log 2>&1 < /dev/null & disown; exit 0",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}
