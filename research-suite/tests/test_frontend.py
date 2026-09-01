@@ -516,14 +516,19 @@ def test_apa_is_a_first_class_screen() -> None:
                     "examples", "fonts"):
         check(f"it shows {section}", section in body, True)
 
-    # APA 7 leads the nav. It is the standard the numbered steps work toward,
-    # not step nine, and the user said plainly that it was the main thing they
-    # wanted — burying it after "8 · Export" was how it went unnoticed.
+    # APA 7 leads the nav, and writing leads APA 7. The rules screen answered
+    # "where is APA 7" but not "where do I write" — so the standard now opens
+    # with the place you write against it, and the reference sits beside it.
+    # Both come before the numbered steps: they are the standard, not step
+    # nine, and burying either is how the whole thing went unnoticed before.
     buttons = re.findall(r'data-view="([^"]+)"', html)
-    check("APA 7 is the first button in the research nav",
-          buttons[0] if buttons else None, "apa")
-    check("and is marked as the standard rather than a step",
-          'data-view="apa" class="nav-standard"' in html, True)
+    check("writing a paper is the first button in the research nav",
+          buttons[0] if buttons else None, "paper")
+    check("with the APA 7 rules beside it",
+          buttons[1] if len(buttons) > 1 else None, "apa")
+    check("and both marked as the standard rather than a step",
+          'data-view="paper" class="nav-standard"' in html
+          and 'data-view="apa" class="nav-standard"' in html, True)
     check("which the stylesheet sets apart",
           ".nav-standard" in (STATIC / "styles.css").read_text("utf-8"), True)
 

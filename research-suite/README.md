@@ -55,6 +55,65 @@ documents, the slide deck, the figures — works, and is tested.
 
 ---
 
+## Writing a paper in APA 7
+
+**The straight lane.** Everything else in the research half starts from a
+research question — frame it, search, screen, appraise, extract, build a claim
+ledger, export. That is right for a systematic review and wrong for the far
+commoner job of *having a paper to write and needing it in APA 7*.
+
+Asked for a place to write in APA 7, this suite offered the reference screen
+below — the rules, the heading levels, nine worked examples — and an export
+button at the end of a pipeline you had to walk first. Reading the rules is not
+writing, and a formatter you can only reach by first inventing a systematic
+review is a formatter you do not have. **Write a paper** now leads the
+navigation, needs no project, and shares the citation engine, the OOXML layer
+and the typeface rules with the research lane — so the formatting is the same
+formatting, and a rule fixed in one place is fixed in both.
+
+It prompts you for the four things a paper is:
+
+| | |
+|---|---|
+| **Title page** | Student or professional, and the fields change with it: course, instructor and due date for a student paper; running head, affiliation and author note for a professional one. |
+| **Abstract** | Optional, with the 150–250 word band shown as guidance rather than enforced. |
+| **The paper** | One text box, five markers. `#` to `#####` are the five APA heading levels, `>` is a block quote, `-` is a list item, `*word*` is italic, a blank line is a paragraph. Indents, double spacing, page numbers and the repeated title are applied on export — you do not type them. |
+| **References** | Added from a DOI or typed into fields, then rendered by the citation engine, which also shows you the exact parenthetical and narrative forms to type. |
+
+### What it will not let you get wrong
+
+The words are yours; this does not write them. What it does is stop the
+mechanical marks being wrong — which is what gets marked down, and exactly what
+a person cannot check by re-reading their own draft at one in the morning:
+
+- **A skipped heading level** (§2.27). A Level 3 under a Level 1 is wrong however
+  sensible the nesting looks, and the page gives no hint of it.
+- **A reference nobody cited, and a citation with no reference** (§8.1, §9.51).
+  Checked in both directions and *asymmetrically on purpose*: going from a
+  reference to your text is a fact, so it is reported as an error; recognising
+  citation-shaped prose is a guess, so it is raised for you to look at and never
+  asserted.
+- **One source listed twice.** Easy to do — once from a DOI, once by hand — and
+  invisible, because the a/b year letters the engine adds make it look deliberate.
+- **A 40-word quotation left inside a paragraph** (§8.27), and a block quote that
+  still has its quotation marks. Put it in its own paragraph and it is made a
+  block, marks removed, indented half an inch.
+- **A direct quotation with no page or paragraph number** (§8.13).
+- **A citation in the APA 6 form.** Three or more authors take *et al.* from the
+  first citation in APA 7; the message shows the form your reference produces.
+- **A running head over 50 characters, or on a student paper at all** (§2.4).
+
+Findings are ordered worst first and typed rather than scored. Red is a rule APA
+states, and stops the export. Amber is guidance with a defensible exception.
+Plain is something the code cannot be certain about. There is no percentage,
+for the same reason there is none anywhere else here: a score invites treating
+92% as good enough, and the missing 8% is the title page.
+
+You can export past the red anyway — a draft printed for your own review is a
+legitimate thing to want — but you have to say so.
+
+---
+
 ## APA 7, on screen
 
 APA 7 is the standard the whole research half works toward, and for a long time
@@ -1093,6 +1152,7 @@ app/
     citations.py     APA 7 in-text citations and reference entries, as styled runs
     ooxml.py         page-number fields, running heads, APA table borders
     document.py      the APA 7 manuscript
+    compose.py       the writing lane — markup, the rule checks, paper storage
     assemble.py      claim ledger → prose with citations placed
     audit_document.py  the companion rationale and mapping document
     deck.py          APA-conventional slides
@@ -1127,7 +1187,7 @@ app/
     routes.py        the charting API — preview and save share one code path
   static/            the UI — vanilla JS, no build step, no CDN
                      app.js research · chart.js charting · shell.js the tab switch
-tests/               3,760 checks, all offline
+tests/               3,838 checks, all offline
 ```
 
 ## Tests
@@ -1154,6 +1214,7 @@ take against Firestore.
 | `test_frontend.py` | 189 | **The suite that was missing.** `node --check` on every script — a syntax error takes out the whole UI and nothing in a Python test notices, which is exactly how `app.js` shipped with an unbalanced paren. Plus: shared globals resolve across files, no duplicate top-level `const` (a hard load error in classic scripts), every `getElementById` has a matching id, every API path the front end calls exists, and **no route is orphaned from the UI** — which is how the language-check endpoint was caught sitting unwired, and, once the same check was extended to the research half, how seven more were found, the whole figure generator among them; and that the screens which must work before anything exists — Settings, Question, Compliance and APA 7 — are not gated behind creating a project |
 | `test_charting_proofing.py` | 122 | Clinical notation masked at **equal length** before it leaves; the masked-span guard tested against what the server saw rather than the original (it looked right and never fired until a test proved it); clinical vocabulary suppressed for spelling hits but **not** for grammar hits; suggested corrections that are themselves clinical terms dropped; and a missing server degrading this feature and nothing else |
 | `test_fulltext.py` | 227 | Headings matched against the **whole line**, so "Abstract reasoning was assessed" does not re-section the paper; a section carrying across a page break, including a page that *ends* on a heading; a paraphrase located as well as a verbatim run, because a locator that only finds plagiarism is not a locator; an unrelated sentence finding nothing, which is the answer this exists to give; intervals not truncated and brackets balanced; the same number written two ways counted once; and a source that states nothing producing an empty matrix and a `missing` list rather than a filled one |
+| `test_compose.py` | 76 | The writing lane, every finding tested in **both** directions against a control paper that reports nothing — because a checker that flagged every draft would satisfy each "it fires" test and be worthless. Markup to document elements: five heading levels, a soft wrap that is not a new paragraph, a 40-word quotation becoming a block *without* its quotation marks. The rules: a skipped level, a reference nobody cited, a citation with no reference, one source listed twice, a quotation with no locator, an APA 6 citation form, a running head at exactly 50 characters (allowed) and 51 (not). A paper id that cannot escape its directory. And the saved OOXML: the Level 4 heading actually running into its paragraph, the block quote indented from the left rather than the first line, the reference hanging |
 | `test_deck.py` | 45 | The class of defect where a feature exists, works, and is reachable from nothing: figures actually packaged into the .pptx, the evidence-level chart recorded on the project rather than only drawn, speaker notes as complete sentences carrying APA in-text citations (including a group-author abbreviation and a quotation locator), no citation invented for an uncited claim, and a deleted image not taking the whole deck with it |
 | `test_charting_flow.py` | 269 | Each interlock as a **pair** — the note refused, then accepted once the missing element is supplied; future events refused and non-overridable; an override recording itself; corrections keeping the original; hash-chain detecting alteration and deletion separately; storage round-tripping every nested type; the stroke bundle anchoring on arrival; and both exported documents, including that the superseded text really carries strike-through |
 
