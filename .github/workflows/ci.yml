@@ -1,0 +1,63 @@
+name: CI
+
+# The "No CI/CD" row in MAINTENANCE_LOG.md (Known Issues & Debt): tests ran
+# only by hand. This is the pre-push gate from ADR-011 run for us instead.
+# Every suite here is offline by design: no network, no keys, no credentials.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Clinical suite tests + tracker syntax check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: research-suite/requirements.txt
+
+      # test_frontend.py shells out to `node --check`, so Node has to be on
+      # PATH before the suite runs, not just for the step below.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clinical suite dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r research-suite/requirements.txt
+
+      - name: Run the clinical suite tests (13 suites, offline)
+        run: bash research-suite/tests/run_all.sh
+
+      # ADR-011: a syntax error in the tracker's front end once took out the
+      # whole UI with no Python test noticing (9b4000a). node --check is what
+      # catches it. Looped because node --check takes one file at a time.
+      - name: Syntax-check the tracker scripts
+        run: |
+          shopt -s nullglob
+          files=(js/*.js)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No files matched js/*.js — expected the tracker scripts here."
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "node --check $f"
+            node --check "$f"
+          done
+        shell: bash
