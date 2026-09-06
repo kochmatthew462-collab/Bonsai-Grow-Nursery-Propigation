@@ -1,0 +1,129 @@
+.devcontainer/devcontainer.json
+.gitattributes
+.gitignore
+.nojekyll
+README.md
+css/styles.css
+index.html
+js/app.js
+js/calendar.js
+js/charts.js
+js/photos.js
+js/profiles.js
+js/qrcode.js
+js/store.js
+js/sync.js
+js/weather.js
+pi/README.md
+pi/cloud.py
+pi/config.example.json
+pi/install.sh
+pi/plantmon.service
+pi/sensord.py
+pi/sensors.py
+pi/store.py
+pi/test_pi.py
+research-suite/.env.example
+research-suite/README.md
+research-suite/app/__init__.py
+research-suite/app/apa/__init__.py
+research-suite/app/apa/assemble.py
+research-suite/app/apa/audit_document.py
+research-suite/app/apa/citations.py
+research-suite/app/apa/deck.py
+research-suite/app/apa/document.py
+research-suite/app/apa/figures.py
+research-suite/app/apa/ooxml.py
+research-suite/app/apa/prisma.py
+research-suite/app/apa/workbook.py
+research-suite/app/charting/__init__.py
+research-suite/app/charting/disclosure.py
+research-suite/app/charting/export.py
+research-suite/app/charting/interlocks.py
+research-suite/app/charting/language.py
+research-suite/app/charting/models.py
+research-suite/app/charting/narrative.py
+research-suite/app/charting/phi.py
+research-suite/app/charting/proofing.py
+research-suite/app/charting/routes.py
+research-suite/app/charting/scales.py
+research-suite/app/charting/specialty.py
+research-suite/app/charting/store.py
+research-suite/app/charting/systems.py
+research-suite/app/compliance/__init__.py
+research-suite/app/compliance/journals.py
+research-suite/app/compliance/rubric.py
+research-suite/app/compliance/simulator.py
+research-suite/app/doctor.py
+research-suite/app/evidence/__init__.py
+research-suite/app/evidence/appraisal.py
+research-suite/app/evidence/dedupe.py
+research-suite/app/evidence/levels.py
+research-suite/app/main.py
+research-suite/app/models.py
+research-suite/app/research/__init__.py
+research-suite/app/research/pico.py
+research-suite/app/security.py
+research-suite/app/settings.py
+research-suite/app/sources/__init__.py
+research-suite/app/sources/base.py
+research-suite/app/sources/fulltext.py
+research-suite/app/sources/gov.py
+research-suite/app/sources/importers.py
+research-suite/app/sources/scholarly.py
+research-suite/app/static/app.js
+research-suite/app/static/chart.js
+research-suite/app/static/index.html
+research-suite/app/static/shell.js
+research-suite/app/static/styles.css
+research-suite/app/storage.py
+research-suite/app/writing/__init__.py
+research-suite/app/writing/draft.py
+research-suite/app/writing/integrity.py
+research-suite/app/writing/proof.py
+research-suite/app/writing/statistics.py
+research-suite/app/writing/style.py
+research-suite/requirements.txt
+research-suite/run.ps1
+research-suite/run.sh
+research-suite/tests/__init__.py
+research-suite/tests/run_all.sh
+research-suite/tests/test_apa_citations.py
+research-suite/tests/test_charting_flow.py
+research-suite/tests/test_charting_language.py
+research-suite/tests/test_charting_proofing.py
+research-suite/tests/test_charting_scales.py
+research-suite/tests/test_deck.py
+research-suite/tests/test_docx_layout.py
+research-suite/tests/test_evidence.py
+research-suite/tests/test_frontend.py
+research-suite/tests/test_fulltext.py
+research-suite/tests/test_research_tools.py
+research-suite/tests/test_security.py
+research-suite/tests/test_sources.py
+test/calendar_test.py
+test/emit_matrices.js
+test/pro_test.py
+test/sensors_test.py
+test/smoke_app.py
+test/sync_test.py
+test/verify_qr.py
+test/weather_test.py
+
+--- ls -lah . ---
+total 92K
+drwxr-xr-x 10 root root 4.0K Sep  6 03:16 .
+drwxr-xr-x  3 root root 4.0K Sep  6 03:15 ..
+drwxr-xr-x  2 root root 4.0K Sep  6 03:15 .devcontainer
+drwxr-xr-x  8 root root 4.0K Sep  6 03:15 .git
+-rw-r--r--  1 root root  986 Sep  6 03:15 .gitattributes
+-rw-r--r--  1 root root  698 Sep  6 03:15 .gitignore
+-rw-r--r--  1 root root  276 Sep  6 03:15 .nojekyll
+-rw-r--r--  1 root root  33K Sep  6 03:15 README.md
+drwxr-xr-x  2 root root 4.0K Sep  6 03:15 css
+drwxr-xr-x  3 root root 4.0K Sep  6 03:16 docs
+-rw-r--r--  1 root root 2.4K Sep  6 03:15 index.html
+drwxr-xr-x  2 root root 4.0K Sep  6 03:15 js
+drwxr-xr-x  2 root root 4.0K Sep  6 03:15 pi
+drwxr-xr-x  4 root root 4.0K Sep  6 03:15 research-suite
+drwxr-xr-x  2 root root 4.0K Sep  6 03:15 test
