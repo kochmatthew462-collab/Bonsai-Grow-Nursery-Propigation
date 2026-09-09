@@ -300,6 +300,7 @@ function tokenBox() {
 
 const VIEWS = {
   projects: viewProjects,
+  paper: viewPaper,
   question: viewQuestion,
   sources: viewSources,
   screen: viewScreen,
@@ -326,6 +327,297 @@ const VIEWS_NEEDING_A_PROJECT = new Set([
 function go(view) {
   state.view = view;
   render();
+}
+
+/* ------------------------------------------------------- writing in APA 7 */
+
+/* The straight lane, and the reason it exists: this application was asked for
+   APA 7 formatting and answered with a research pipeline. The APA screen next
+   door is the rules; this is the place you actually write, with the rules
+   applied to what you type rather than printed beside it.
+
+   Kept entirely separate from the numbered steps. Nothing here needs a
+   project, a question, an evidence level or a claim ledger. */
+
+const paperState = { id: null, data: null, dirty: false, timer: null };
+
+function viewPaper() {
+  const host = el('div', { class: 'stack' }, el('p', { class: 'hint' }, 'Loading…'));
+
+  if (!paperState.id) {
+    api('/api/papers').then((list) => {
+      host.replaceChildren(paperPicker(list));
+    }).catch((error) => host.replaceChildren(notice(error.message, 'bad')));
+    return host;
+  }
+
+  api(`/api/papers/${paperState.id}`)
+    .then((data) => { paperState.data = data; drawPaper(host, data); })
+    .catch((error) => {
+      paperState.id = null;
+      host.replaceChildren(notice(error.message, 'bad'));
+    });
+  return host;
+}
+
+function paperPicker(list) {
+  const title = el('input', { type: 'text',
+    placeholder: 'Nurse Staffing Ratios and Patient Falls' });
+  const variant = el('select', {},
+    el('option', { value: 'student' }, 'Student paper'),
+    el('option', { value: 'professional' }, 'Professional paper'));
+
+  const open = (id) => { paperState.id = id; render(); };
+
+  return el('div', { class: 'stack' },
+    card('Write a paper in APA 7',
+      el('p', { class: 'hint' }, 'You write the words. This puts them in APA 7 '
+        + 'and refuses to let the mechanical marks be wrong — the skipped '
+        + 'heading level, the reference nobody cited, the quotation long '
+        + 'enough to need a block, the running head over fifty characters. '
+        + 'Nothing here needs a research project.'),
+      field('Title', title, 'Changeable at any time.'),
+      field('Type', variant, 'Student papers carry course, instructor and due '
+        + 'date; professional papers carry a running head and an affiliation.'),
+      el('button', { class: 'primary', onclick: () => guard(async () => {
+        const data = await post('/api/papers',
+          { title: title.value, variant: variant.value });
+        open(data.paper.paper_id);
+      }) }, 'Start writing')),
+
+    card('Papers',
+      list.papers.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+          el('thead', {}, el('tr', {}, ['Title', 'Type', 'Words', 'References', '']
+            .map((h) => el('th', {}, h)))),
+          el('tbody', {}, list.papers.map((row) => el('tr', {},
+            el('td', {}, row.title || '(untitled)'),
+            el('td', {}, row.variant),
+            el('td', {}, String(row.words)),
+            el('td', {}, String(row.references)),
+            el('td', {},
+              el('button', { onclick: () => open(row.paper_id) }, 'Open'),
+              el('button', { class: 'danger', onclick: () => guard(async () => {
+                await api(`/api/papers/${row.paper_id}`, { method: 'DELETE' });
+                render();
+              }) }, 'Delete')))))))
+        : notice('No papers yet.', 'warn')));
+}
+
+function drawPaper(host, data) {
+  const paper = data.paper;
+  host.replaceChildren();
+
+  host.append(el('div', { class: 'row' },
+    el('button', { onclick: () => { paperState.id = null; render(); } },
+      '← All papers'),
+    el('span', { class: 'hint' }, `${data.words} words · `
+      + `${paper.references.length} references`)));
+
+  host.append(paperSetupCard(paper, data));
+  host.append(paperBodyCard(paper, data));
+  host.append(paperReferencesCard(paper, data));
+  host.append(paperFindingsCard(data));
+  host.append(paperExportCard(paper, data));
+}
+
+/* Saving is explicit rather than on every keystroke. An autosave that fires
+   mid-sentence turns the findings list into a strobe light — a heading is
+   "empty" for the half second between typing the hashes and the words. */
+function savePaper(changes) {
+  return guard(async () => {
+    const data = await api(`/api/papers/${paperState.id}`,
+      { method: 'PUT', body: JSON.stringify(changes) });
+    paperState.data = data;
+    toast('Saved.');
+    render();
+  });
+}
+
+function paperSetupCard(paper, data) {
+  const title = el('input', { type: 'text', value: paper.title });
+  const variant = el('select', {},
+    el('option', { value: 'student', selected: paper.variant === 'student' },
+      'Student paper'),
+    el('option', { value: 'professional',
+      selected: paper.variant === 'professional' }, 'Professional paper'));
+  const authors = el('textarea', { rows: 3 }, (paper.authors || []).join('\n'));
+  const affiliations = el('textarea', { rows: 2 },
+    (paper.affiliations || []).join('\n'));
+  const course = el('input', { type: 'text', value: paper.course });
+  const instructor = el('input', { type: 'text', value: paper.instructor });
+  const due = el('input', { type: 'text', value: paper.due_date });
+  const head = el('input', { type: 'text', value: paper.running_head });
+  const note = el('textarea', { rows: 3 }, paper.author_note);
+  const abstract = el('textarea', { rows: 6 }, paper.abstract);
+  const keywords = el('input', { type: 'text',
+    value: (paper.keywords || []).join(', ') });
+
+  const student = paper.variant === 'student';
+
+  return card('Title page',
+    field('Title', title),
+    field('Type', variant),
+    field('Authors', authors, 'One per line, as you want them printed.'),
+    field('Affiliation', affiliations, student
+      ? 'Your department and university.'
+      : 'Required on a professional title page.'),
+    student ? field('Course', course, 'NURS 601: Evidence-Based Practice') : null,
+    student ? field('Instructor', instructor) : null,
+    student ? field('Due date', due, 'September 1, 2026') : null,
+    student ? null : field('Running head', head,
+      'Up to 50 characters including spaces. Printed in capitals; type it as '
+      + 'you want it read. Left blank, it is taken from the title.'),
+    student ? null : field('Author note', note, 'APA 7 §2.7.'),
+    field('Abstract', abstract, 'Optional. Usually 150–250 words, on its own '
+      + 'page, unindented — the indent is removed for you.'),
+    field('Keywords', keywords, 'Comma separated. Three to five is usual.'),
+    el('button', { class: 'primary', onclick: () => savePaper({
+      title: title.value, variant: variant.value, authors: authors.value,
+      affiliations: affiliations.value, course: course.value,
+      instructor: instructor.value, due_date: due.value,
+      running_head: head.value, author_note: note.value,
+      abstract: abstract.value, keywords: keywords.value.split(','),
+    }) }, 'Save title page'));
+}
+
+function paperBodyCard(paper, data) {
+  const body = el('textarea', { rows: 24, class: 'paper-body', spellcheck: 'true' },
+    paper.body);
+
+  const outline = data.outline.length
+    ? el('div', { class: 'table-wrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ['Level', 'Heading', 'Words']
+        .map((h) => el('th', {}, h)))),
+      el('tbody', {}, data.outline.map((row) => el('tr', {},
+        el('td', {}, String(row.level)),
+        /* A class, not a style attribute. The Content-Security-Policy here is
+           `style-src 'self'`, which blocks inline styles outright — the indent
+           simply did not apply, silently, and the outline rendered flat. */
+        el('td', {}, el('span', { class: `outline-level outline-${row.level}` },
+          row.text)),
+        el('td', {}, String(row.words)))))))
+    : el('p', { class: 'hint' }, 'No headings yet.');
+
+  return card('The paper',
+    el('p', { class: 'hint' }, 'Write here. Paragraph indents, double spacing, '
+      + 'the page numbers and the repeated title are applied on export — do '
+      + 'not type them.'),
+    body,
+    el('button', { class: 'primary',
+      onclick: () => savePaper({ body: body.value }) }, 'Save'),
+    el('h3', {}, 'How to mark it up'),
+    el('div', { class: 'table-wrap' }, el('table', {},
+      el('tbody', {}, data.markup.map((row) => el('tr', {},
+        el('th', {}, el('code', {}, row.mark)),
+        el('td', {}, row.means)))))),
+    el('h3', {}, 'Shape'),
+    outline);
+}
+
+function paperReferencesCard(paper, data) {
+  const doi = el('input', { type: 'text', placeholder: '10.1136/bmjqs-2020-011512' });
+
+  const inputs = {};
+  const fields = data.reference_fields.map((spec) => {
+    let input;
+    if (spec.kind === 'select') {
+      input = el('select', {}, spec.options.map((option) =>
+        el('option', { value: option }, option.replace(/-/g, ' '))));
+    } else if (spec.name === 'authors') {
+      input = el('textarea', { rows: 3 });
+    } else {
+      input = el('input', { type: 'text' });
+    }
+    inputs[spec.name] = input;
+    return field(spec.label, input, spec.help || '');
+  });
+
+  const rows = data.citations.length
+    ? data.citations.map((row) => el('div', { class: 'list-row' },
+      el('p', {}, row.reference),
+      el('p', { class: 'hint' },
+        `In text: ${row.parenthetical}  ·  narrative: ${row.narrative}`),
+      el('button', { class: 'danger', onclick: () => guard(async () => {
+        const next = await api(
+          `/api/papers/${paperState.id}/references/${encodeURIComponent(row.key)}`,
+          { method: 'DELETE' });
+        paperState.data = next;
+        render();
+      }) }, 'Remove')))
+    : [notice('No references yet. Every reference you add here is formatted by '
+      + 'the same engine that writes the document, and shows you the exact '
+      + 'in-text form to type.', 'warn')];
+
+  return card('References',
+    el('p', { class: 'hint' }, 'APA 7 §9.51: the reference list and the '
+      + 'citations in your text must match exactly — everything listed is '
+      + 'cited, everything cited is listed. Both directions are checked below.'),
+    el('div', { class: 'list' }, rows),
+    el('h3', {}, 'Add by DOI'),
+    field('DOI', doi, 'The fastest route when the source has one.'),
+    el('button', { onclick: () => guard(async () => {
+      const next = await post(`/api/papers/${paperState.id}/references/lookup`,
+        { doi: doi.value });
+      paperState.data = next;
+      toast('Reference added.');
+      render();
+    }) }, 'Look up'),
+    el('h3', {}, 'Or type it'),
+    fields,
+    el('button', { onclick: () => guard(async () => {
+      const values = {};
+      for (const [name, input] of Object.entries(inputs)) values[name] = input.value;
+      const next = await post(`/api/papers/${paperState.id}/references`, values);
+      paperState.data = next;
+      toast('Reference added.');
+      render();
+    }) }, 'Add reference'));
+}
+
+function paperFindingsCard(data) {
+  const kinds = { error: 'bad', warn: 'warn', check: '' };
+  return card('What APA 7 says about this draft',
+    data.findings.length
+      ? el('div', { class: 'list' }, data.findings.map((f) =>
+        notice(`${f.rule} — ${f.message}`, kinds[f.severity])))
+      : notice('Nothing outstanding. Every rule this can check mechanically '
+        + 'is satisfied.', 'good'),
+    el('p', { class: 'hint' }, 'Red is a rule APA states and stops the export. '
+      + 'Amber is guidance with a defensible exception. Plain is something this '
+      + 'cannot be certain about and is raising for you to look at — it is not '
+      + 'claiming you are wrong.'));
+}
+
+function paperExportCard(paper, data) {
+  const font = el('select', {}, data.fonts.map((name) =>
+    el('option', { value: name, selected: name === (paper.font || data.default_font) },
+      name)));
+  const result = el('div', { class: 'stack' });
+
+  const run = (force) => guard(async () => {
+    const out = await post(`/api/papers/${paperState.id}/export`,
+      { font: font.value, force });
+    result.replaceChildren();
+    if (out.blockers && out.blockers.length) {
+      result.append(notice(out.message, 'bad'));
+      result.append(el('div', { class: 'list' }, out.blockers.map((b) =>
+        notice(`${b.rule} — ${b.message}`, 'bad'))));
+      result.append(el('button', { onclick: () => run(true) },
+        'Export anyway, as a draft'));
+      return;
+    }
+    result.append(notice(out.message, 'good'));
+    result.append(el('div', { class: 'list' }, out.exported.map((f) =>
+      el('p', {}, `${f.name} — ${f.words} words`))));
+  });
+
+  return card('Export',
+    field('Typeface', font, 'Every one APA 7 §2.19 lists. The size is set with '
+      + 'it — 12 point for Times New Roman, 11 for Calibri and Arial.'),
+    el('button', { class: 'primary', onclick: () => run(false) },
+      'Write the .docx'),
+    result);
 }
 
 /* ------------------------------------------------------------------ projects */
@@ -1474,6 +1766,19 @@ function viewApa() {
          often. Rendered by the same engine, so they are a live demonstration
          rather than a copied-out list: if the engine regresses, these break
          here before a paper does. */
+      /* The way through to actually writing. This screen is the rules, and
+         someone arriving here wanting to write a paper in APA 7 found only
+         the rules — which was the whole complaint. */
+      host.append(card('Writing a paper in APA 7',
+        el('p', {}, 'This screen is the standard. The place to write against '
+          + 'it is next door: a title page, an abstract, a body with the five '
+          + 'heading levels, a reference list that is checked against your '
+          + 'citations in both directions, and a .docx at the end.'),
+        el('p', { class: 'hint' }, 'It needs no research project, no question '
+          + 'and no evidence grading — those belong to the numbered steps.'),
+        el('button', { class: 'primary', onclick: () => go('paper') },
+          'Write a paper')));
+
       host.append(card('Worked examples of the nine hardest reference types',
         el('p', { class: 'hint' }, 'Not sources — nothing here is retrievable '
           + 'and nothing here enters a project. They are run through the same '
