@@ -1,0 +1,43 @@
+7e52e50 Merge pull request #12 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+900eb73 Make the "already running" message describe the run that is running
+7cc36fe Merge pull request #11 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+7f1eeb1 Let the suite be reached from another machine, deliberately
+365de62 Merge pull request #7 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+a257bec Merge pull request #9 from kochmatthew462-collab/claude/bonsai-metrics-tracking-h8r68l
+65f59fb Fix Pi install for Bookworm (PEP 668) and non-'pi' user accounts
+8652b77 Merge main: keep both .gitignore additions
+00c8563 Merge pull request #8 from kochmatthew462-collab/claude/bonsai-metrics-tracking-h8r68l
+5514c08 Add Raspberry Pi cabinet monitor: continuous sensors, live card, chill logger
+026ef9f Stop making the user re-authenticate every time they close the tab
+5b03b56 Stop the port from moving, which is what was 404ing
+530ff72 Put APA 7 first, and make it readable without a project
+1d73ea0 Give APA 7 its own screen
+f2044d5 Forget a rejected token, and let one be pasted in
+3dd82c6 Keep the session token across restarts
+48c0f1a Stop the browser caching the shell and its scripts
+ce20031 Explain a stale token instead of throwing on it
+2191825 Declare both ports and open the browser automatically
+17bd465 Stop recommending a command that is not installed
+d91b8d2 Let the self check run outside the virtual environment
+4bcc8e0 Add a self check, because four rounds of guessing is three too many
+071f537 Bind wide in a Codespace, and declare the forwarded port
+b826cdf Make it work in a GitHub Codespace, without loosening the host check
+72e4def Keep the nav bars, and hide only the steps that need something open
+589fdad Make the launcher say why it will not start
+de6bb89 Never print a URL that nothing is listening on
+bc86193 Fix a blank screen caused by CSS defeating the hidden attribute
+11c4438 Read PDFs into anchored passages, and wire up what was unreachable
+9094033 Fix defects found by an adversarial audit of this codebase
+18d24b7 Add discovery, compliance and statistics tooling
+9b4000a Fix a syntax error that broke the entire UI, and test for it
+074715f Add spelling and grammar checking to the charting tab
+4cfab32 Add clinical charting tab for bedside and advanced-practice nurses
+fd76469 Add evidence-based research and APA 7 authoring suite
+32ded12 Add professional record layer: specimen, lineage, IPM, photos, derived readouts (#6)
+39ffeb7 Add weather watch, move alerts, and calendar export (#5)
+3d97ca5 Add master calendar, derived drip log, and handbook task windows (#4)
+ab26e88 Align care profiles with the three handbooks; rename to Koch's Tree Nursery Tracker (#3)
+9f8f639 Add environment factors, care profiles, target bands and optional cloud sync (#2)
+f78c115 Add .nojekyll so Pages publishes the static files as-is
+750d52c Add bonsai nursery tracker with scannable QR plant labels (#1)
+5569c01 Initial commit

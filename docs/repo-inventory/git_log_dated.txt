@@ -1,0 +1,43 @@
+7e52e50  2026-09-01  kochmatthew462-collab  Merge pull request #12 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+900eb73  2026-09-01  Claude  Make the "already running" message describe the run that is running
+7cc36fe  2026-09-01  kochmatthew462-collab  Merge pull request #11 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+7f1eeb1  2026-09-01  Claude  Let the suite be reached from another machine, deliberately
+365de62  2026-09-01  kochmatthew462-collab  Merge pull request #7 from kochmatthew462-collab/claude/research-paper-generator-w6h7et
+a257bec  2026-08-30  kochmatthew462-collab  Merge pull request #9 from kochmatthew462-collab/claude/bonsai-metrics-tracking-h8r68l
+65f59fb  2026-08-30  Claude  Fix Pi install for Bookworm (PEP 668) and non-'pi' user accounts
+8652b77  2026-08-29  Claude  Merge main: keep both .gitignore additions
+00c8563  2026-08-28  kochmatthew462-collab  Merge pull request #8 from kochmatthew462-collab/claude/bonsai-metrics-tracking-h8r68l
+5514c08  2026-08-29  Claude  Add Raspberry Pi cabinet monitor: continuous sensors, live card, chill logger
+026ef9f  2026-08-19  Claude  Stop making the user re-authenticate every time they close the tab
+5b03b56  2026-08-19  Claude  Stop the port from moving, which is what was 404ing
+530ff72  2026-08-19  Claude  Put APA 7 first, and make it readable without a project
+1d73ea0  2026-08-19  Claude  Give APA 7 its own screen
+f2044d5  2026-08-19  Claude  Forget a rejected token, and let one be pasted in
+3dd82c6  2026-08-19  Claude  Keep the session token across restarts
+48c0f1a  2026-08-19  Claude  Stop the browser caching the shell and its scripts
+ce20031  2026-08-19  Claude  Explain a stale token instead of throwing on it
+2191825  2026-08-19  Claude  Declare both ports and open the browser automatically
+17bd465  2026-08-19  Claude  Stop recommending a command that is not installed
+d91b8d2  2026-08-18  Claude  Let the self check run outside the virtual environment
+4bcc8e0  2026-08-18  Claude  Add a self check, because four rounds of guessing is three too many
+071f537  2026-08-18  Claude  Bind wide in a Codespace, and declare the forwarded port
+b826cdf  2026-08-18  Claude  Make it work in a GitHub Codespace, without loosening the host check
+72e4def  2026-08-18  Claude  Keep the nav bars, and hide only the steps that need something open
+589fdad  2026-08-17  Claude  Make the launcher say why it will not start
+de6bb89  2026-08-17  Claude  Never print a URL that nothing is listening on
+bc86193  2026-08-17  Claude  Fix a blank screen caused by CSS defeating the hidden attribute
+11c4438  2026-08-17  Claude  Read PDFs into anchored passages, and wire up what was unreachable
+9094033  2026-08-17  Claude  Fix defects found by an adversarial audit of this codebase
+18d24b7  2026-08-17  Claude  Add discovery, compliance and statistics tooling
+9b4000a  2026-08-17  Claude  Fix a syntax error that broke the entire UI, and test for it
+074715f  2026-08-17  Claude  Add spelling and grammar checking to the charting tab
+4cfab32  2026-08-17  Claude  Add clinical charting tab for bedside and advanced-practice nurses
+fd76469  2026-08-17  Claude  Add evidence-based research and APA 7 authoring suite
+32ded12  2026-08-17  kochmatthew462-collab  Add professional record layer: specimen, lineage, IPM, photos, derived readouts (#6)
+39ffeb7  2026-08-16  kochmatthew462-collab  Add weather watch, move alerts, and calendar export (#5)
+3d97ca5  2026-08-16  kochmatthew462-collab  Add master calendar, derived drip log, and handbook task windows (#4)
+ab26e88  2026-08-16  kochmatthew462-collab  Align care profiles with the three handbooks; rename to Koch's Tree Nursery Tracker (#3)
+9f8f639  2026-08-16  kochmatthew462-collab  Add environment factors, care profiles, target bands and optional cloud sync (#2)
+f78c115  2026-08-16  kochmatthew462-collab  Add .nojekyll so Pages publishes the static files as-is
+750d52c  2026-08-16  kochmatthew462-collab  Add bonsai nursery tracker with scannable QR plant labels (#1)
+5569c01  2026-08-16  kochmatthew462-collab  Initial commit
