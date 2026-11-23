@@ -31,9 +31,11 @@
   var CONSISTENT_NIGHTS = 2;
   var SPRING_STABLE_NIGHTS = 5;
 
-  // Brookeville, Maryland — ZIP 20833, the location both tree handbooks are
-  // written for. Editable on the Calendar page.
-  var DEFAULT_LOCATION = { latitude: 39.18, longitude: -77.06, label: 'Brookeville, MD (20833)' };
+  // No built-in location: this is a public site, so it ships none. Each user
+  // sets their own on the Calendar page the first time; until then the
+  // forecast says so instead of fetching, and everything else works as usual.
+  var DEFAULT_LOCATION = { latitude: null, longitude: null, label: '' };
+  var NO_LOCATION_MESSAGE = 'Set your location (latitude and longitude) on the Calendar page to see the forecast.';
 
   function readJson(key, fallback) {
     try {
@@ -59,6 +61,16 @@
     };
   }
 
+  function isCoordinate(value, limit) {
+    return typeof value === 'number' && isFinite(value) && Math.abs(value) <= limit;
+  }
+
+  /** True once a usable latitude and longitude have been saved. */
+  function hasLocation(config) {
+    var c = config || settings();
+    return isCoordinate(c.latitude, 90) && isCoordinate(c.longitude, 180);
+  }
+
   function setSettings(next) {
     var merged = settings();
     Object.keys(next || {}).forEach(function (key) { merged[key] = next[key]; });
@@ -81,6 +93,7 @@
     if (hit) return Promise.resolve(hit);
 
     var config = settings();
+    if (!hasLocation(config)) return Promise.reject(new Error(NO_LOCATION_MESSAGE));
     var url = config.endpoint +
       '?latitude=' + encodeURIComponent(config.latitude) +
       '&longitude=' + encodeURIComponent(config.longitude) +
@@ -281,6 +294,7 @@
     settings: settings,
     setSettings: setSettings,
     defaultLocation: DEFAULT_LOCATION,
+    hasLocation: hasLocation,
     fetchForecast: fetchForecast,
     cached: cached,
     alertFor: alertFor,

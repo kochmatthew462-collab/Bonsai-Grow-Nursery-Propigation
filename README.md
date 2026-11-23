@@ -10,6 +10,8 @@ This repo contains a working tracker — a static web app with no accounts, no
 server and no subscription. It also answers the question that started it: *can
 we build this, or can Office or another free tool already do it?*
 
+> The clinical/APA research suite that used to live in `research-suite/` has moved to the owner's private Study-Buddy repository.
+
 ---
 
 ## Short answer
@@ -168,7 +170,7 @@ handbooks, and each profile names its source on screen:
 |---|---|---|
 | BENCH | *Bonsai Bench Environment Packet* (Aug 2026) | median card, per-species temperature and soil envelopes, the season program |
 | BOOK | *The Complete Bonsai Grower* | class defaults: substrate pH, leachate EC by development phase, VWC trigger, light by class, winter floors, the vigor rubric |
-| TREE | *The Arbequina Olive in Central Maryland* and *Bergamot in Central Maryland* | everything for the two container trees — both written for ZIP 20833, zone 7b |
+| TREE | *The Arbequina Olive in Central Maryland* and *Bergamot in Central Maryland* | everything for the two container trees — both written for USDA zone 7b |
 
 Where a species handbook and a class default disagree, **the species handbook
 wins** and the disagreement is written into the profile's note rather than
@@ -303,8 +305,9 @@ A 10-day acclimation prompt appears before each window: shaded porch before
 coming in, sheltered shade with morning sun introduced gradually before going
 out.
 
-Location defaults to Brookeville, MD (39.18, −77.06), the ZIP 20833 both tree
-handbooks are written for, and is editable on the Calendar page. The forecast
+There is no built-in location. Set your own latitude and longitude on the
+Calendar page the first time; it is stored only in your browser, and until it is
+set the weather cards say so instead of fetching (everything else works). The forecast
 comes from **Open-Meteo** — free, no API key, CORS-enabled, which is what makes
 it usable from a static page with nothing to keep secret. Responses are cached
 for an hour.

@@ -8,7 +8,7 @@
  *   BOOK    The Complete Bonsai Grower — class defaults: substrate pH, leachate
  *           EC by development phase, VWC trigger, light by class, winter floors.
  *   TREE    The Arbequina Olive in Central Maryland, and Bergamot in Central
- *           Maryland — both written for ZIP 20833, USDA zone 7b.
+ *           Maryland — both written for USDA zone 7b.
  *
  * Where a species handbook and a class default disagree, the species handbook
  * wins and the disagreement is recorded in the profile's notes. Bands are
@@ -301,7 +301,7 @@
       ]
     },
 
-    /* --------------------------------------------- container trees, ZIP 20833 */
+    /* ------------------------------------------ container trees, USDA zone 7b */
     {
       id: 'bergamot',
       transitions: {
@@ -345,7 +345,7 @@
           body: 'Hold 45-58 F, bright, dry and unfertilised for 8-12 weeks. Never below 40 F at pot level. This is what induces next spring\'s bloom.' }
       ],
       name: 'Italian bergamot — container',
-      scientific: 'Citrus bergamia · young stem graft · ZIP 20833, zone 7b',
+      scientific: 'Citrus bergamia · young stem graft · USDA zone 7b',
       setting: 'seasonal',
       source: 'Bergamot in Central Maryland',
       summary: 'Outdoors roughly May 10–20 to Oct 1–15, then a cool bright rest indoors at 45–58 °F. The rest is not storage — it is what induces the following spring’s bloom.',
@@ -436,7 +436,7 @@
           body: 'Put a thermometer in the candidate space and watch it through a cold snap BEFORE you need it. Too warm (65-72 F) and induction fails as surely as too cold.' }
       ],
       name: 'Arbequina olive — container',
-      scientific: "Olea europaea 'Arbequina' · young stem graft · ZIP 20833, zone 7b",
+      scientific: "Olea europaea 'Arbequina' · young stem graft · USDA zone 7b",
       setting: 'seasonal',
       source: 'The Arbequina Olive in Central Maryland',
       summary: 'Outdoors mid-April to late October, banking chill, then a cool bright winter indoors at 50–55 °F. Chill is what decides whether there is a crop at all — and it fails from being too warm as readily as too cold.',

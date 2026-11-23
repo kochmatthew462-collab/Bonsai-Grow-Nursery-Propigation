@@ -47,7 +47,7 @@ class MockForecastHandler(http.server.SimpleHTTPRequestHandler):
             start = datetime.date.today()
             days = [(start + datetime.timedelta(days=i)).isoformat() for i in range(len(MOCK_LOWS))]
             payload = {
-                "latitude": 39.18, "longitude": -77.06, "timezone": "America/New_York",
+                "latitude": 40.0, "longitude": -75.0, "timezone": "America/New_York",
                 "daily": {
                     "time": days,
                     "temperature_2m_min": MOCK_LOWS,
@@ -167,8 +167,25 @@ def main() -> int:
         a = decide("bergamot", [52, 54, 51, 55, 56, 58, 60], "2026-05-05T12:00:00")
         check("bergamot: all nights above 50 F says go", a and a["level"] == "good", str(a))
 
-        # --- the live path, against the mock endpoint
+        # --- no location ships with the app: until the user sets one, the
+        # fetch refuses with a message that says what to do, and fetches nothing
         page.evaluate("(origin) => window.BonsaiWeather.setSettings({endpoint: origin + 'v1/forecast'})", base)
+        check("no default location", not page.evaluate("() => window.BonsaiWeather.hasLocation()"))
+        unset = page.evaluate("""async () => {
+            try { await window.BonsaiWeather.fetchForecast(true); return 'fetched'; }
+            catch (e) { return e.message; }
+        }""")
+        check("unset location asks the user to set one", "Set your location" in unset, unset)
+        page.goto(base + "#/calendar")
+        page.wait_for_selector("h2:has-text('Location and alerts')")
+        check("calendar prompts for a location",
+              page.locator("text=No location set yet").count() == 1)
+        page.goto(base)              # leave #/calendar so the later visit re-renders it
+        page.wait_for_selector("h1")
+
+        # --- the live path, against the mock endpoint, once a location is set
+        page.evaluate("() => window.BonsaiWeather.setSettings({latitude: 40.0, longitude: -75.0, label: 'Test bench'})")
+        check("location saved", page.evaluate("() => window.BonsaiWeather.hasLocation()"))
         forecast = page.evaluate("async () => await window.BonsaiWeather.fetchForecast(true)")
         check("forecast fetch and parse", len(forecast["days"]) == len(MOCK_LOWS),
               f"{len(forecast.get('days', []))} days")

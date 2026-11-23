@@ -1,2 +1,0 @@
-origin	https://github.com/kochmatthew462-collab/Bonsai-Grow-Nursery-Propigation (fetch)
-origin	https://github.com/kochmatthew462-collab/Bonsai-Grow-Nursery-Propigation (push)

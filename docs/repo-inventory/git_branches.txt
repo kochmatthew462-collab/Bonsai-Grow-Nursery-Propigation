@@ -1,4 +1,0 @@
-* claude/repos-pdf-maintenance-log-jlwmtl
-  main
-  remotes/origin/claude/repos-pdf-maintenance-log-jlwmtl
-  remotes/origin/main
