@@ -1784,7 +1784,7 @@
     var card = h('div', { class: 'card' }, [
       h('div', { class: 'card-head' }, [
         h('h2', { text: 'Weather watch' }),
-        h('span', { class: 'hint', text: config.label })
+        h('span', { class: 'hint', text: weather.hasLocation(config) ? config.label : 'location not set' })
       ]),
       body
     ]);
@@ -1839,14 +1839,19 @@
 
   function weatherSettingsCard() {
     var config = weather.settings();
-    var lat = h('input', { type: 'number', name: 'latitude', step: '0.01', value: config.latitude });
-    var lon = h('input', { type: 'number', name: 'longitude', step: '0.01', value: config.longitude });
-    var label = h('input', { type: 'text', name: 'label', value: config.label });
+    var lat = h('input', { type: 'number', name: 'latitude', step: '0.01', min: '-90', max: '90', value: config.latitude, placeholder: 'e.g. 40.00' });
+    var lon = h('input', { type: 'number', name: 'longitude', step: '0.01', min: '-180', max: '180', value: config.longitude, placeholder: 'e.g. -75.00' });
+    var label = h('input', { type: 'text', name: 'label', value: config.label, placeholder: 'e.g. Home bench' });
     var notify = h('input', { type: 'checkbox', name: 'notify', checked: config.notify });
     var status = h('p', { class: 'hint' });
 
     return h('div', { class: 'card no-print' }, [
       h('h2', { text: 'Location and alerts' }),
+      weather.hasLocation(config) ? null : h('p', {
+        class: 'hint',
+        text: 'No location set yet. Enter your latitude and longitude (two decimals is plenty) and ' +
+          'press Save to turn on the forecast and move alerts. It is stored only in this browser.'
+      }),
       h('div', { class: 'field-grid' }, [
         field('Latitude', lat),
         field('Longitude', lon),
@@ -1864,8 +1869,10 @@
         h('button', {
           class: 'button button-primary', text: 'Save and refresh',
           onclick: function () {
+            // An empty box means "not set", not 0 (which is a real place).
             weather.setSettings({
-              latitude: Number(lat.value), longitude: Number(lon.value),
+              latitude: lat.value.trim() === '' ? null : Number(lat.value),
+              longitude: lon.value.trim() === '' ? null : Number(lon.value),
               label: label.value, notify: notify.checked
             });
             if (notify.checked && weather.canNotify()) {

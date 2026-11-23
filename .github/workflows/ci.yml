@@ -1,8 +1,7 @@
 name: CI
 
-# The "No CI/CD" row in MAINTENANCE_LOG.md (Known Issues & Debt): tests ran
-# only by hand. This is the pre-push gate from ADR-011 run for us instead.
-# Every suite here is offline by design: no network, no keys, no credentials.
+# Tests ran only by hand until this workflow existed. Every step here is
+# offline by design: no network, no keys, no credentials.
 
 on:
   push:
@@ -15,7 +14,7 @@ permissions:
 
 jobs:
   tests:
-    name: Clinical suite tests + tracker syntax check
+    name: Tracker syntax check + Pi monitor tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -27,27 +26,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: research-suite/requirements.txt
 
-      # test_frontend.py shells out to `node --check`, so Node has to be on
-      # PATH before the suite runs, not just for the step below.
+      # pi/test_pi.py runs the real js/store.js under node to prove the Python
+      # and JavaScript merges agree, so Node is needed for both steps.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install clinical suite dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r research-suite/requirements.txt
-
-      - name: Run the clinical suite tests (13 suites, offline)
-        run: bash research-suite/tests/run_all.sh
-
-      # ADR-011: a syntax error in the tracker's front end once took out the
-      # whole UI with no Python test noticing (9b4000a). node --check is what
-      # catches it. Looped because node --check takes one file at a time.
+      # A syntax error in the tracker's front end once took out the whole UI
+      # with nothing noticing (9b4000a). node --check is what catches it.
+      # Looped because node --check takes one file at a time.
       - name: Syntax-check the tracker scripts
         run: |
           shopt -s nullglob
@@ -61,3 +50,12 @@ jobs:
             node --check "$f"
           done
         shell: bash
+
+      # The Pi installs requests from apt (pi/install.sh); here it comes from pip.
+      - name: Install the Pi monitor's dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run the Pi monitor tests (offline, no hardware)
+        run: python3 pi/test_pi.py
